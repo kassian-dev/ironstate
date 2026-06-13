@@ -1,6 +1,8 @@
-# →(Fe) ironstate
+<p align="center">
+  <img src="https://raw.githubusercontent.com/kassian-dev/ironstate/main/assets/wordmark.png" alt="ironstate" width="320">
+</p>
 
-Verified state machines for humans and AI agents.
+<p align="center"><strong>Verified state machines for humans and AI agents.</strong></p>
 
 A state machine is the set of states something can be in and the legal moves between them. ironstate lets you declare those states and one transition function in plain Rust, then enforces the structure at runtime and verifies it in your tests. The same definition does both jobs, so there is no separate model to keep in sync.
 

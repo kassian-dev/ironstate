@@ -47,7 +47,7 @@ impl TransitionRules for Article {
 Now drive it. `apply` is the one call that changes state, and it always returns a `Result` — ironstate never panics on a bad move, it hands you a typed error.
 
 ```rust,ignore
-let mut article = Machine::<Article>::new();          // Draft
+let mut article = Machine::<Article>::new();           // Draft
 article.apply(Edit::Submit)?;                          // Review
 article.apply(Edit::Approve)?;                         // Published
 ```
@@ -57,8 +57,8 @@ Two structural guarantees come for free, checked before your `transition` functi
 Three cheaper ways to look without moving, in increasing detail:
 
 ```rust,ignore
-article.could_apply(&Edit::Approve);   // bool — would it be accepted?
-article.why_not(&Edit::Approve);       // Option<TransitionError> — the exact reason it wouldn't
+article.could_apply(&Edit::Approve);     // bool — would it be accepted?
+article.why_not(&Edit::Approve);         // Option<TransitionError> — the exact reason it wouldn't
 article.peek_transition(&Edit::Approve); // Option<Article> — where it would land
 ```
 

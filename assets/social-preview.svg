@@ -1,17 +1,17 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 640" width="1280" height="640" role="img" aria-label="ironstate — verified state machines for humans and AI agents">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 640" width="1280" height="640" role="img" aria-label="ironstate">
+  <defs><linearGradient id="tg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#30404f"/><stop offset="1" stop-color="#141b22"/></linearGradient></defs>
   <rect width="1280" height="640" fill="#11181f"/>
-  <!-- mark: arrow into the Fe tile -->
-  <g fill="#f59e0b">
-    <rect x="60" y="308" width="80" height="24" rx="4"/>
-    <path d="M136 285 L178 320 L136 355 Z"/>
+    <g transform="translate(351.42,320.00)">
+    <path d="M -198.88 0.00 L -234.08 -42.24 L -234.08 -15.49 L -276.32 -15.49 L -276.32 15.49 L -234.08 15.49 L -234.08 42.24 Z" fill="#f59e0b" stroke="#b45309" stroke-width="5.1"/>
+    <path d="M -121.21 114.58 L -125.63 110.77 L -129.92 106.79 L -134.07 102.64 L -138.07 98.32 L -141.91 93.85 L -145.59 89.22 L -149.09 84.44 L -152.41 79.51 L -155.53 74.45 L -158.46 69.25 L -161.19 63.94 L -163.70 58.51 L -165.99 52.97 L -168.06 47.33 L -169.90 41.61 L -171.51 35.81 L -172.87 29.95 L -173.99 24.03 L -174.87 18.06 L -175.50 12.06 L -175.87 6.04 L -176.00 0.00 L -175.87 -6.04 L -175.50 -12.06 L -174.87 -18.06 L -173.99 -24.03 L -172.87 -29.95 L -171.51 -35.81 L -169.90 -41.61 L -168.06 -47.33 L -165.99 -52.97 L -163.70 -58.51 L -161.19 -63.94 L -158.46 -69.25 L -155.53 -74.45 L -152.41 -79.51 L -149.09 -84.44 L -145.59 -89.22 L -141.91 -93.85 L -138.07 -98.32 L -134.07 -102.64 L -129.92 -106.79 L -125.63 -110.77 L -121.21 -114.58 L -105.31 -98.12 L -108.51 -94.29 L -111.56 -90.36 L -114.46 -86.34 L -117.20 -82.23 L -119.79 -78.04 L -122.23 -73.78 L -124.51 -69.46 L -126.64 -65.07 L -128.61 -60.62 L -130.44 -56.13 L -132.11 -51.59 L -133.63 -47.02 L -135.00 -42.41 L -136.23 -37.77 L -137.30 -33.10 L -138.23 -28.41 L -139.02 -23.70 L -139.66 -18.98 L -140.16 -14.25 L -140.52 -9.50 L -140.73 -4.75 L -140.80 0.00 L -140.73 4.75 L -140.52 9.50 L -140.16 14.25 L -139.66 18.98 L -139.02 23.70 L -138.23 28.41 L -137.30 33.10 L -136.23 37.77 L -135.00 42.41 L -133.63 47.02 L -132.11 51.59 L -130.44 56.13 L -128.61 60.62 L -126.64 65.07 L -124.51 69.46 L -122.23 73.78 L -119.79 78.04 L -117.20 82.23 L -114.46 86.34 L -111.56 90.36 L -108.51 94.29 L -105.31 98.12 Z" fill="#f59e0b" stroke="#b45309" stroke-width="5.1"/>
+    <path d="M 121.21 -114.58 L 125.63 -110.77 L 129.92 -106.79 L 134.07 -102.64 L 138.07 -98.32 L 141.91 -93.85 L 145.59 -89.22 L 149.09 -84.44 L 152.41 -79.51 L 155.53 -74.45 L 158.46 -69.25 L 161.19 -63.94 L 163.70 -58.51 L 165.99 -52.97 L 168.06 -47.33 L 169.90 -41.61 L 171.51 -35.81 L 172.87 -29.95 L 173.99 -24.03 L 174.87 -18.06 L 175.50 -12.06 L 175.87 -6.04 L 176.00 0.00 L 175.87 6.04 L 175.50 12.06 L 174.87 18.06 L 173.99 24.03 L 172.87 29.95 L 171.51 35.81 L 169.90 41.61 L 168.06 47.33 L 165.99 52.97 L 163.70 58.51 L 161.19 63.94 L 158.46 69.25 L 155.53 74.45 L 152.41 79.51 L 149.09 84.44 L 145.59 89.22 L 141.91 93.85 L 138.07 98.32 L 134.07 102.64 L 129.92 106.79 L 125.63 110.77 L 121.21 114.58 L 105.31 98.12 L 108.51 94.29 L 111.56 90.36 L 114.46 86.34 L 117.20 82.23 L 119.79 78.04 L 122.23 73.78 L 124.51 69.46 L 126.64 65.07 L 128.61 60.62 L 130.44 56.13 L 132.11 51.59 L 133.63 47.02 L 135.00 42.41 L 136.23 37.77 L 137.30 33.10 L 138.23 28.41 L 139.02 23.70 L 139.66 18.98 L 140.16 14.25 L 140.52 9.50 L 140.73 4.75 L 140.80 0.00 L 140.73 -4.75 L 140.52 -9.50 L 140.16 -14.25 L 139.66 -18.98 L 139.02 -23.70 L 138.23 -28.41 L 137.30 -33.10 L 136.23 -37.77 L 135.00 -42.41 L 133.63 -47.02 L 132.11 -51.59 L 130.44 -56.13 L 128.61 -60.62 L 126.64 -65.07 L 124.51 -69.46 L 122.23 -73.78 L 119.79 -78.04 L 117.20 -82.23 L 114.46 -86.34 L 111.56 -90.36 L 108.51 -94.29 L 105.31 -98.12 Z" fill="#f59e0b" stroke="#b45309" stroke-width="5.1"/>
+    <rect x="-88.00" y="-94.78" width="176.00" height="189.55" rx="33.79" fill="url(#tg)" stroke="#3b4a55" stroke-width="5.1"/>
+    <rect x="-82.90" y="-89.67" width="165.79" height="179.34" rx="28.69" fill="none" stroke="#46586a" stroke-width="2.6" stroke-opacity="0.6"/>
+    <text x="-66.00" y="-49.09" font-family="Helvetica, Arial, sans-serif" font-size="27.1" font-weight="700" fill="#f59e0b">26</text>
+    <text x="0.00" y="54.21" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="110.0" font-weight="700" fill="#e8edf2">Fe</text>
   </g>
-  <rect x="176" y="200" width="240" height="240" rx="42" fill="#1f2933"/>
-  <rect x="176" y="200" width="240" height="240" rx="42" fill="none" stroke="#3b4a55" stroke-width="4"/>
-  <text x="204" y="258" font-family="Helvetica, Arial, sans-serif" font-size="38" font-weight="600" fill="#8aa0b3">26</text>
-  <text x="296" y="392" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="150" font-weight="700" fill="#e8edf2">Fe</text>
-  <!-- wordmark + tagline -->
-  <text x="482" y="262" font-family="Helvetica, Arial, sans-serif" font-size="116" font-weight="800" fill="#e8edf2">ironstate</text>
-  <text x="484" y="332" font-family="Helvetica, Arial, sans-serif" font-size="40" font-weight="400" fill="#9fb3c4">Verified state machines</text>
-  <text x="484" y="384" font-family="Helvetica, Arial, sans-serif" font-size="40" font-weight="400" fill="#9fb3c4">for humans and AI agents</text>
-  <text x="486" y="452" font-family="Helvetica, Arial, sans-serif" font-size="30" font-weight="600" fill="#f59e0b">decide · evolve · replay · verify</text>
+  <text x="560" y="262" font-family="Helvetica, Arial, sans-serif" font-size="116" font-weight="800" fill="#e8edf2">ironstate</text>
+  <text x="562" y="332" font-family="Helvetica, Arial, sans-serif" font-size="40" font-weight="400" fill="#9fb3c4">Verified state machines</text>
+  <text x="562" y="384" font-family="Helvetica, Arial, sans-serif" font-size="40" font-weight="400" fill="#9fb3c4">for humans and AI agents</text>
+  <text x="564" y="452" font-family="Helvetica, Arial, sans-serif" font-size="30" font-weight="600" fill="#f59e0b">decide · evolve · replay · verify</text>
 </svg>

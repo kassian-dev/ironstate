@@ -94,7 +94,7 @@ crate, so `resume` returns a `ResumeError { Journal | Restore | NoBase }` that
 names all three causes honestly. `replay` and `replay_hash` still return the
 core `RestoreError` directly, as the spec specifies.
 
-## F-11 — Fuzzing blocks; mutation testing is advisory; both run per PR and on main
+## F-11 — Fuzzing blocks; mutation testing is advisory; both run on every PR
 
 Untrusted bytes enter ironstate in exactly one place: `restore_versioned` decodes
 a stored `{version, payload}` envelope. A `cargo-fuzz` target exercises that path
@@ -112,3 +112,20 @@ non-determinism), and a generous per-mutant timeout keeps results deterministic
 so it does not falsely flip to "clean". Both live in `quality.yml`, kept separate
 from `ci.yml` so the elevated `pull-requests` permission stays scoped to it.
 Blocking on mutants can be revisited once the equivalent-mutant excludes settle.
+
+## F-12 — Cross-target determinism is verified x86_64 vs aarch64; wasm32 is build-only
+
+Same `(seed, journal)` ⇒ identical `Digest128` on any target. CI enforces this at
+runtime: the `test` matrix runs the seeded `determinism_test!` digests on both
+x86_64 and aarch64 Linux, and the `determinism` job fails if the two manifests
+differ. aarch64 is chosen because it is a first-class hosted runner with a
+different codegen backend, so the suite just runs there with no extra tooling.
+wasm32 is the more obvious target — the encoding is designed to be wasm-identical
+— but running the seeded suite under wasm needs a wasm test runner
+(wasmtime + `wasm32-wasip1`, with proptest/getrandom wired up), so that is
+deferred. `make wasm` therefore stays a *build-only* check (the
+determinism-sensitive crates must link with no host dependence; an undefined
+wasm symbol is a hard error), and the runtime digest diff uses aarch64. The
+per-target `target/ironstate-determinism/*.digest` files are ephemeral CI
+artifacts (regenerated every run, gitignored) — distinct from the write-once
+golden vectors pinned in source.

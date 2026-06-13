@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 220" width="760" height="220" role="img" aria-label="ironstate">
+  <!-- mark: arrow into the Fe tile -->
+  <g fill="#f59e0b">
+    <rect x="8" y="103" width="40" height="14" rx="3"/>
+    <path d="M44 90 L70 110 L44 130 Z"/>
+  </g>
+  <rect x="74" y="38" width="144" height="144" rx="26" fill="#1f2933"/>
+  <rect x="74" y="38" width="144" height="144" rx="26" fill="none" stroke="#3b4a55" stroke-width="3"/>
+  <text x="90" y="72" font-family="Helvetica, Arial, sans-serif" font-size="23" font-weight="600" fill="#8aa0b3">26</text>
+  <text x="146" y="152" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="88" font-weight="700" fill="#e8edf2">Fe</text>
+  <!-- wordmark -->
+  <text x="248" y="142" font-family="Helvetica, Arial, sans-serif" font-size="104" font-weight="800" fill="#1f2933">ironstate</text>
+</svg>

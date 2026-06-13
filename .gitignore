@@ -1,3 +1,5 @@
 .idea
 
-/target
+# Cargo build output, including the per-crate `target/ironstate-determinism`
+# digests that determinism tests regenerate on every run.
+target/

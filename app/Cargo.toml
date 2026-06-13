@@ -1,0 +1,48 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/ironstate",
+    "crates/ironstate-derive",
+    "crates/ironstate-aggregate",
+    "crates/ironstate-aggregate-derive",
+    "crates/ironstate-journal",
+    "crates/examples/hidden-info",
+    "crates/examples/release-pipeline",
+    "crates/examples/ledger",
+]
+
+[workspace.package]
+edition = "2024"
+rust-version = "1.96"
+license = "Apache-2.0"
+repository = "https://github.com/kassian-dev/ironstate"
+
+[workspace.dependencies]
+# internal
+ironstate = { version = "0.1", path = "crates/ironstate" }
+ironstate-derive = { version = "0.1", path = "crates/ironstate-derive" }
+ironstate-aggregate = { version = "0.1", path = "crates/ironstate-aggregate" }
+ironstate-aggregate-derive = { version = "0.1", path = "crates/ironstate-aggregate-derive" }
+ironstate-journal = { version = "0.1", path = "crates/ironstate-journal" }
+
+# external — pin minor, let patch float
+rustc-stable-hash = "0.1" # rust-lang-maintained engine behind Digest128
+blake3 = "1.8"            # engine behind AuditDigest
+rand = { version = "0.10", default-features = false }
+# ChaCha12Rng with set_word_pos gives the O(1) counter seek SeededEntropy needs
+rand_chacha = { version = "0.10", default-features = false }
+# `fork`/`timeout` pull wait-timeout, which doesn't build for wasm32 — and the
+# determinism suite must run on wasm — so they're off; property testing doesn't need them.
+proptest = { version = "1", default-features = false, features = ["std", "bit-set"] }
+thiserror = "2"
+# anyhow for application/binary/test glue; the library's public errors stay typed.
+anyhow = "1"
+syn = { version = "2", features = ["full", "extra-traits"] }
+quote = "1"
+proc-macro2 = "1"
+serde = { version = "1", features = ["derive"] }
+trybuild = "1"
+
+[profile.test]
+# Speeds up the proptest / scenario corpora enough to keep CI runs in budget.
+opt-level = 1

@@ -1,0 +1,6 @@
+# The workspace tracks the latest stable toolchain (per maintainer preference).
+# edition 2024 requires >= 1.96; MSRV is declared per-crate in Cargo.toml.
+[toolchain]
+channel = "stable"
+components = ["rustfmt", "clippy"]
+targets = ["wasm32-unknown-unknown"]

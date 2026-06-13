@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 640" width="1280" height="640" role="img" aria-label="ironstate — verified state machines for humans and AI agents">
+  <rect width="1280" height="640" fill="#11181f"/>
+  <!-- mark: arrow into the Fe tile -->
+  <g fill="#f59e0b">
+    <rect x="60" y="308" width="80" height="24" rx="4"/>
+    <path d="M136 285 L178 320 L136 355 Z"/>
+  </g>
+  <rect x="176" y="200" width="240" height="240" rx="42" fill="#1f2933"/>
+  <rect x="176" y="200" width="240" height="240" rx="42" fill="none" stroke="#3b4a55" stroke-width="4"/>
+  <text x="204" y="258" font-family="Helvetica, Arial, sans-serif" font-size="38" font-weight="600" fill="#8aa0b3">26</text>
+  <text x="296" y="392" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="150" font-weight="700" fill="#e8edf2">Fe</text>
+  <!-- wordmark + tagline -->
+  <text x="482" y="262" font-family="Helvetica, Arial, sans-serif" font-size="116" font-weight="800" fill="#e8edf2">ironstate</text>
+  <text x="484" y="332" font-family="Helvetica, Arial, sans-serif" font-size="40" font-weight="400" fill="#9fb3c4">Verified state machines</text>
+  <text x="484" y="384" font-family="Helvetica, Arial, sans-serif" font-size="40" font-weight="400" fill="#9fb3c4">for humans and AI agents</text>
+  <text x="486" y="452" font-family="Helvetica, Arial, sans-serif" font-size="30" font-weight="600" fill="#f59e0b">decide · evolve · replay · verify</text>
+</svg>

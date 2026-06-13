@@ -1,0 +1,14 @@
+version: 2
+updates:
+  # Bump SHA-pinned GitHub Actions (with the version comment) under review, so
+  # pinning tightly does not mean going stale.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+
+  # Track Cargo dependency advisories/updates for the workspace.
+  - package-ecosystem: cargo
+    directory: /app
+    schedule:
+      interval: weekly

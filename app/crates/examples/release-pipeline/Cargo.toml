@@ -1,0 +1,15 @@
+[package]
+name = "release-pipeline"
+version = "0.0.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+description = "A CI/CD release as a core ironstate lifecycle machine; an end-to-end example"
+
+[dependencies]
+ironstate = { workspace = true }
+
+[[bin]]
+name = "release-pipeline"
+path = "src/main.rs"

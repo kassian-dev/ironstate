@@ -1,0 +1,40 @@
+[package]
+name = "ironstate"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Verified state machines for humans and AI agents"
+readme = "README.md"
+keywords = ["state-machine", "verification", "event-sourcing", "fsm"]
+categories = ["data-structures", "development-tools::testing"]
+
+[dependencies]
+ironstate-derive = { workspace = true, optional = true }
+thiserror.workspace = true
+proptest = { workspace = true, optional = true }
+# serde/serde_json back versioned restore only: the {version, payload} envelope
+# decodes through the MigrateFrom chain. Pulled in by the `restore` feature so a
+# plain in-memory machine carries no serialization dependency.
+serde = { workspace = true, optional = true }
+serde_json = { version = "1", optional = true }
+
+[dev-dependencies]
+proptest.workspace = true
+serde = { workspace = true }
+serde_json = "1"
+
+[features]
+default = ["derive", "proptest", "restore"]
+# The StateMachine/Event derive macros.
+derive = ["dep:ironstate-derive"]
+# The test!() property-testing macro (analyze!() is always available).
+proptest = ["dep:proptest"]
+# Versioned restore: decode a persisted {version, payload} envelope and migrate
+# it forward through the MigrateFrom chain. Without it a machine is in-memory
+# only, and the `version`/`history` attributes are unavailable.
+restore = ["dep:serde", "dep:serde_json"]
+
+[package.metadata.docs.rs]
+all-features = true

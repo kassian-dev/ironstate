@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256" role="img" aria-label="ironstate: an arrow into the iron element tile">
+  <!-- arrow: a state transition, pointing into Fe -->
+  <g fill="#f59e0b">
+    <rect x="12" y="120" width="46" height="16" rx="3"/>
+    <path d="M54 106 L82 128 L54 150 Z"/>
+  </g>
+  <!-- the iron (Fe) element tile -->
+  <rect x="86" y="53" width="150" height="150" rx="26" fill="#1f2933"/>
+  <rect x="86" y="53" width="150" height="150" rx="26" fill="none" stroke="#3b4a55" stroke-width="3"/>
+  <text x="104" y="88" font-family="Helvetica, Arial, sans-serif" font-size="24" font-weight="600" fill="#8aa0b3">26</text>
+  <text x="161" y="170" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="92" font-weight="700" fill="#e8edf2">Fe</text>
+</svg>

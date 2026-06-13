@@ -1,0 +1,55 @@
+name: Release
+
+# Publishing is driven by CI. release-plz opens a release PR that bumps the
+# versions of the crates whose source changed and updates the changelog; merging
+# it publishes only those crates to crates.io in dependency order and pushes a
+# signed tag per release. Assumes the crates are already bootstrapped — published
+# once and registered as trusted publishers (a one-time setup, not CI's job).
+#
+# Security: Trusted Publishing via OIDC (no long-lived CARGO_REGISTRY_TOKEN),
+# SLSA build-provenance attestations signed through Sigstore, signed tags, and
+# SHA-pinned actions.
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write # create release commits, tags, and GitHub releases
+  pull-requests: write # open/update the release PR
+  id-token: write # OIDC exchange for crates.io Trusted Publishing
+  attestations: write # build-provenance attestations
+
+jobs:
+  release-plz:
+    name: release-plz
+    runs-on: ubuntu-24.04
+    # Don't run on the release PR's own merge commit loop.
+    if: ${{ github.repository_owner == 'kassian-dev' }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 0 # release-plz needs full history to detect changes
+
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+
+      # Exchange the workflow's OIDC identity for a short-lived crates.io token.
+      - name: Authenticate to crates.io (Trusted Publishing)
+        uses: rust-lang/crates-io-auth-action@b7e9a28eded4986ec6b1fa40eeee8f8f165559ec # v1
+        id: auth
+
+      - name: Run release-plz
+        uses: release-plz/action@e8792575c7f2366cf6ff3ccc33ead9ace5b691c7 # v0.5
+        with:
+          # The Cargo workspace lives under app/.
+          manifest_path: app/Cargo.toml
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Attest provenance for any crates this run packaged (SLSA, via Sigstore).
+      - name: Attest build provenance
+        if: ${{ hashFiles('app/target/package/*.crate') != '' }}
+        uses: actions/attest-build-provenance@ef244123eb79f2f7a7e75d99086184180e6d0018 # v1
+        with:
+          subject-path: app/target/package/*.crate

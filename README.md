@@ -287,10 +287,11 @@ order is doc change → code → tests → gates. See [`AGENTS.md`](AGENTS.md),
 Publishing is CI-driven by [release-plz](https://release-plz.dev) (in
 [`.github/workflows/release.yml`](.github/workflows/release.yml)): a push to
 `main` opens a release PR that bumps the versions of the crates whose source
-changed and updates the [CHANGELOG](CHANGELOG.md); merging it publishes **only
+changed and updates each changed crate's changelog; merging it publishes **only
 those crates**, in dependency order, and tags each. The `examples/*` crates are
-`publish = false`, and release-plz maintains the changelog (the hand-written
-`0.1.0` entry seeds it).
+`publish = false`, and release-plz maintains a `CHANGELOG.md` per crate (each
+crate's `0.1.0` entry seeds it); the root [`CHANGELOG.md`](CHANGELOG.md) is a
+family index linking to them.
 
 The same workflow is also wired to a manual `workflow_dispatch` for one-off
 releases.

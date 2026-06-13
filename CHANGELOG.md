@@ -1,39 +1,22 @@
 # Changelog
 
-All notable changes to the ironstate family are recorded here. The format is
-based on [Keep a Changelog](https://keepachangelog.com/); the crates version
-together during 0.x. Future entries are maintained by release-plz.
+The ironstate family keeps a changelog per crate, each maintained by release-plz
+on release. This file is the family index and records family-wide milestones; see
+each crate's changelog for its detailed notes.
 
-## [0.1.0] - 2026-06-13
+- [`ironstate`](app/crates/ironstate/CHANGELOG.md) — lifecycle-machine core
+- [`ironstate-derive`](app/crates/ironstate-derive/CHANGELOG.md) — core derives
+- [`ironstate-aggregate`](app/crates/ironstate-aggregate/CHANGELOG.md) — aggregate tier
+- [`ironstate-aggregate-derive`](app/crates/ironstate-aggregate-derive/CHANGELOG.md) — aggregate derives
+- [`ironstate-journal`](app/crates/ironstate-journal/CHANGELOG.md) — journal tier
 
-The initial release of the crate family (superseding the `ironstate 0.0.1`
-placeholder).
+## 0.1.0 - 2026-06-13
 
-### Added
-
-- **`ironstate`** (core) — `#[derive(StateMachine)]` / `#[derive(Event)]`, the
-  `Machine` runtime with `apply`/`could_apply`/`why_not`/`peek_transition`,
-  structural enforcement (terminal states, event-kind restrictions), typed
-  `TransitionError`, sync listeners with an injectable clock, declared
-  `Invariants`, versioned restore (`version`/`history`/`MigrateFrom`, behind the
-  default-on `restore` feature), and the `analyze!` / `test!` verification macros
-  with `[proven]`/`[sampled]` labels.
-- **`ironstate-aggregate`** — the `decide`/`evolve` aggregate runtime
-  (`AggregateRules`, `Aggregate`, `Rejection`, `why_not`), the counter-addressable
-  `SeededEntropy` and `EntropySource` API, redaction (`Conceal`/`OwnerRedact`/
-  `PerPrincipal`/`Owned`/`View` + the `Redact` derive), the frozen-encoding
-  `StableHash` (`Digest128` + BLAKE3 `AuditDigest`) with teaching compile-errors,
-  and the `test!` / `determinism_test!` / `leak_test!` macros.
-- **`ironstate-journal`** — the `Journal` trait with atomic entropy positions,
-  the `MemoryJournal` reference implementation, `replay`/`resume`/`execute`/
-  `replay_hash`/`fork`, the seven-property `journal_contract_test!`,
-  `Subscription`/`React` idempotent delivery, the `Versioned` derive, and the
-  seeded `scenario_test!` with the public `FaultInjector`/`ReferenceRun` testkit.
-- **Examples** (end-to-end tests): `hidden-info`, `release-pipeline`, `ledger`.
-
-### Notes
+The initial public release of the family (superseding the `ironstate 0.0.1`
+placeholder). All five crates released together at 0.1.0; see each crate's
+changelog above for its notes.
 
 - The `ironstate-lints` dylint crate was considered and dropped; the determinism
   contract it would enforce is already executable via the `StableHash`
   compile-errors, the clock-free entropy API, and `determinism_test!`. See
-  `docs/decisions/0002-deferred-and-out-of-scope.md`.
+  [`docs/decisions/0002-deferred-and-out-of-scope.md`](docs/decisions/0002-deferred-and-out-of-scope.md).

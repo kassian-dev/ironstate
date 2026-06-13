@@ -284,15 +284,20 @@ order is doc change → code → tests → gates. See [`AGENTS.md`](AGENTS.md),
 
 ## Releasing & supply-chain security
 
-Publishing is CI-driven. On a push to `main`,
-[release-plz](https://release-plz.dev) (in
-[`.github/workflows/release.yml`](.github/workflows/release.yml)) opens a release
-PR that bumps the versions of the crates whose source changed and updates the
-[CHANGELOG](CHANGELOG.md); merging it publishes **only those crates**, in
-dependency order, and tags each. The `examples/*` crates are `publish = false`,
-and release-plz maintains the changelog (the hand-written `0.1.0` entry seeds it).
+Publishing is CI-driven by [release-plz](https://release-plz.dev) (in
+[`.github/workflows/release.yml`](.github/workflows/release.yml)): a push to
+`main` opens a release PR that bumps the versions of the crates whose source
+changed and updates the [CHANGELOG](CHANGELOG.md); merging it publishes **only
+those crates**, in dependency order, and tags each. The `examples/*` crates are
+`publish = false`, and release-plz maintains the changelog (the hand-written
+`0.1.0` entry seeds it).
 
-Security practices, all in that workflow:
+While the crates are still being bootstrapped on crates.io, this workflow runs
+on **manual dispatch only** — the push-to-`main` trigger is commented out in
+`release.yml` and re-enabled once each crate has had its first publish and
+trusted-publisher registration.
+
+Security practices across the workflows:
 
 - **Trusted Publishing (OIDC)** — crates.io issues a short-lived token at
   runtime, so there is **no long-lived `CARGO_REGISTRY_TOKEN` secret**. (One-time
@@ -300,7 +305,9 @@ Security practices, all in that workflow:
   each crate's first manual publish.)
 - **Build-provenance attestations** — published artifacts get SLSA provenance
   signed via Sigstore and logged in the public Rekor transparency log.
-- **Signed release tags** and **SHA-pinned actions**.
+- **Signed release tags** and **SHA-pinned actions**, with **Dependabot**
+  bumping those pinned actions and the Cargo dependencies weekly — so pinning
+  tightly doesn't mean going stale.
 - **`cargo deny`** (licenses, advisories, yanked, duplicate majors) gates every
   PR, and `Cargo.lock` is committed.
 

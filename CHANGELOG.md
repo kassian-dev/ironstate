@@ -15,8 +15,9 @@ placeholder).
   `Machine` runtime with `apply`/`could_apply`/`why_not`/`peek_transition`,
   structural enforcement (terminal states, event-kind restrictions), typed
   `TransitionError`, sync listeners with an injectable clock, declared
-  `Invariants`, versioned restore (`version`/`history`/`MigrateFrom`), and the
-  `analyze!` / `test!` verification macros with `[proven]`/`[sampled]` labels.
+  `Invariants`, versioned restore (`version`/`history`/`MigrateFrom`, behind the
+  default-on `restore` feature), and the `analyze!` / `test!` verification macros
+  with `[proven]`/`[sampled]` labels.
 - **`ironstate-aggregate`** — the `decide`/`evolve` aggregate runtime
   (`AggregateRules`, `Aggregate`, `Rejection`, `why_not`), the counter-addressable
   `SeededEntropy` and `EntropySource` API, redaction (`Conceal`/`OwnerRedact`/

@@ -59,7 +59,7 @@ construction) or `[sampled]` (observed over generated input):
 
 Given state/events that hash stably, entropy drawn only through the journal-owned
 source, and an adapter that passes the contract suite, identical `(seed,
-journal)` produces an identical `Digest128` on `x86_64` and `wasm32`. The
+journal)` produces an identical `Digest128` on any target. The
 conditions are not prose — they are enforced:
 
 - The `StableHash` derive **rejects floats, hash maps, and wall clocks in state**

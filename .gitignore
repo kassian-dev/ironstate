@@ -3,3 +3,11 @@
 # Cargo build output, including the per-crate `target/ironstate-determinism`
 # digests that determinism tests regenerate on every run.
 target/
+
+# cargo-fuzz corpus/artifacts (fuzz/Cargo.toml and fuzz/fuzz_targets are tracked)
+/app/crates/ironstate/fuzz/corpus/
+/app/crates/ironstate/fuzz/artifacts/
+
+# cargo-mutants output
+/app/mutants.out/
+/app/mutants.out.old/

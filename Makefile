@@ -9,6 +9,10 @@ CARGO := cargo
 WASM_TARGET := wasm32-unknown-unknown
 # Mirrors workspace.package.rust-version; the `msrv` target verifies it still builds.
 MSRV := 1.96.0
+# Wall-clock budget for a `make fuzz` run; CI overrides it.
+FUZZ_SECONDS ?= 180
+# Extra args for `make mutants` (CI passes `--in-diff` to scope to changed lines).
+MUTANTS_ARGS ?=
 
 # Run all cargo commands from inside the workspace directory.
 CARGO_DIR := cd $(APP) &&
@@ -65,6 +69,14 @@ wasm: ## Build the determinism-sensitive crates for wasm32 (cross-target check)
 .PHONY: deny
 deny: ## Supply-chain gate: licenses, advisories, duplicate majors
 	$(CARGO_DIR) $(CARGO) deny check
+
+.PHONY: fuzz
+fuzz: ## Fuzz the versioned-restore decode path (needs nightly + cargo-fuzz); FUZZ_SECONDS to tune
+	cd $(APP)/crates/ironstate && $(CARGO) +nightly fuzz run restore -- -max_total_time=$(FUZZ_SECONDS) -max_len=4096
+
+.PHONY: mutants
+mutants: ## Mutation-test the code (cargo-mutants); MUTANTS_ARGS='--in-diff <patch>' to scope to changes
+	$(CARGO_DIR) $(CARGO) mutants $(MUTANTS_ARGS)
 
 .PHONY: check
 check: fmt-check clippy test ## The done-gate: formatting, lints, and tests

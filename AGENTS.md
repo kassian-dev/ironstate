@@ -33,7 +33,7 @@ records are files in the repo, not chat history.
 - **Teaching errors.** Every `Display`, every derive diagnostic: what happened,
   why, what to do. Enforced by error-message snapshot tests and `trybuild`.
 - **Determinism is conditional and the conditions are executable.** Same
-  `(seed, journal)` ⇒ identical `Digest128` on x86_64 and wasm32. Enforced by
+  `(seed, journal)` ⇒ identical `Digest128` across targets. Enforced by
   the `StableHash` derive's compile errors (floats / hash maps / wall clocks in
   state are rejected), the float- and clock-free `EntropySource` API,
   `determinism_test!` (catches any nondeterminism in `decide`/`evolve`), and
@@ -49,7 +49,10 @@ records are files in the repo, not chat history.
 make check        # fmt-check + clippy (-D warnings) + test --all-features
 ```
 
-Agents and humans use the same gate. There is no looser "agent mode."
+Agents and humans use the same gate. There is no looser "agent mode." On every
+pull request, `quality.yml` additionally fuzzes the restore-decode path
+(`make fuzz`, blocks on a crash) and mutation-tests the changed code
+(`make mutants --in-diff`, advisory — a sticky PR comment, never blocks).
 
 ## Workflow order
 

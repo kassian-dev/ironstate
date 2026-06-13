@@ -93,3 +93,22 @@ journal (which fails with `JournalError`), replays (which fails with
 crate, so `resume` returns a `ResumeError { Journal | Restore | NoBase }` that
 names all three causes honestly. `replay` and `replay_hash` still return the
 core `RestoreError` directly, as the spec specifies.
+
+## F-11 — Fuzzing blocks; mutation testing is advisory; both run per PR and on main
+
+Untrusted bytes enter ironstate in exactly one place: `restore_versioned` decodes
+a stored `{version, payload}` envelope. A `cargo-fuzz` target exercises that path
+on every pull request and blocks on a crash, since a crash is a real,
+reproducible bug. Because the run is non-deterministic, a found crash is folded
+into the corpus (and uploaded) so libFuzzer replays it every run and re-fails
+until fixed — a known crash can't silently flip green on a later push; the
+lasting gate is a regression test built from the reproducer. Fuzzing needs a
+nightly toolchain, isolated to that one CI job — the crates themselves stay on stable. Mutation testing
+(`cargo-mutants --in-diff`) runs on the changed lines and is advisory: it posts
+surviving mutants to a sticky PR comment but never fails the build, because
+equivalent mutants would otherwise block unrelated work. The comment updates in
+place — it never deletes (delete/recreate would flicker under the run-to-run
+non-determinism), and a generous per-mutant timeout keeps results deterministic
+so it does not falsely flip to "clean". Both live in `quality.yml`, kept separate
+from `ci.yml` so the elevated `pull-requests` permission stays scoped to it.
+Blocking on mutants can be revisited once the equivalent-mutant excludes settle.

@@ -15,8 +15,8 @@ Each layer below states what it proves and where it lives. The done-gate is
 | Leak | No covert flow from one principal's hidden state to another's view | `leak_test!()` |
 | Conformance | A journal adapter satisfies the seven contract properties | `journal_contract_test!()` |
 | Simulation | Faults are invisible to outcomes | `scenario_test!()` |
-| Fuzz / hostile input | Garbage is rejected with a typed error, never a panic | `cargo-fuzz`, scheduled |
-| Mutation | The suite actually catches bugs | `cargo-mutants`, scheduled |
+| Fuzz / hostile input | Garbage is rejected with a typed error, never a panic | `cargo-fuzz` on the versioned-restore decode path; blocks on a crash (uploads the reproducer), every PR |
+| Mutation | The suite actually catches bugs | `cargo-mutants --in-diff` on changed code; advisory (sticky PR comment, never blocks), every PR |
 | Compile-fail | Derive diagnostics teach (exact stderr) | `trybuild` fixtures |
 
 ## Rules

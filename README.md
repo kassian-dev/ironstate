@@ -270,6 +270,8 @@ make doc      # build the rustdoc with warnings denied
 make wasm     # cross-target build for wasm32
 make deny     # licenses / advisories / duplicate majors
 make msrv     # build on the minimum supported Rust (1.96)
+make fuzz     # fuzz the restore-decode path (needs nightly + cargo-fuzz)
+make mutants  # mutation-test the code (cargo-mutants)
 ```
 
 `make check` is the single done-gate — the same for a human at a keyboard and an

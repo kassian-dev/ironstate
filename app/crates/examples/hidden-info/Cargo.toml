@@ -1,0 +1,20 @@
+[package]
+name = "hidden-info"
+version = "0.0.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+description = "Worked hidden-information aggregate example; the family's integration template"
+
+[dependencies]
+ironstate = { workspace = true }
+ironstate-aggregate = { workspace = true, features = ["redaction", "audit", "proptest"] }
+ironstate-journal = { workspace = true, features = ["sim"] }
+anyhow.workspace = true
+thiserror.workspace = true
+proptest.workspace = true
+
+[[bin]]
+name = "hidden-info"
+path = "src/main.rs"

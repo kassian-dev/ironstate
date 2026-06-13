@@ -1,0 +1,7 @@
+error: HashMap/HashSet cannot appear in stable-hashed state.
+       Their iteration order is randomized, so two equal maps could encode differently.
+       Use BTreeMap/BTreeSet (ordered) or PerPrincipal, or mark the field `#[stable_hash(skip)]`.
+ --> tests/ui/hashmap_field.rs:5:16
+  |
+5 |     by_player: HashMap<u32, u32>,
+  |                ^^^^^^^^^^^^^^^^^

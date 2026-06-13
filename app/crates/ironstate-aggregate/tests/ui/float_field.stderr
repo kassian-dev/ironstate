@@ -1,0 +1,7 @@
+error: floats cannot appear in stable-hashed state.
+       Floating-point results are not identical across platforms and optimization levels, so a digest would not be reproducible.
+       Use an integer or fixed-point representation, or mark the field `#[stable_hash(skip)]` if it is not part of the value's identity.
+ --> tests/ui/float_field.rs:4:12
+  |
+4 |     value: f64,
+  |            ^^^

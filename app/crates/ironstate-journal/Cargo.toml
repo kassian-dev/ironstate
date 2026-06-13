@@ -1,0 +1,29 @@
+[package]
+name = "ironstate-journal"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Event journal for ironstate aggregates: append/snapshot/replay/fork/subscribe"
+readme = "README.md"
+keywords = ["event-sourcing", "event-store", "journal", "replay", "cqrs"]
+categories = ["data-structures"]
+
+[dependencies]
+# replay_hash publishes collision-resistant digests, so the audit engine is on.
+ironstate-aggregate = { workspace = true, features = ["audit"] }
+# RestoreError is defined in core and surfaced by replay/replay_hash.
+ironstate = { version = "0.1", path = "../ironstate", default-features = false }
+thiserror.workspace = true
+proptest = { workspace = true, optional = true }
+serde = { workspace = true, optional = true }
+
+[features]
+default = ["memory"]
+memory = []
+serde = ["dep:serde", "ironstate-aggregate/serde"]
+sim = ["memory", "dep:proptest", "ironstate-aggregate/proptest"]
+
+[package.metadata.docs.rs]
+all-features = true

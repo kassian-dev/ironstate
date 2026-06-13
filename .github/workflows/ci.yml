@@ -1,0 +1,128 @@
+name: CI
+
+on:
+  push:
+    branches:
+     - main
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+# Jobs invoke the same `make` targets a developer runs locally, so CI and a
+# laptop do exactly the same things. The Makefile lives at the repo root and
+# drives cargo inside app/, so steps run from the root (no working-directory).
+
+jobs:
+  fmt-clippy:
+    name: fmt + clippy
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with:
+          workspaces: app
+      - run: make fmt-check
+      - run: make clippy
+
+  test:
+    name: test (${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { arch: x86_64, runner: ubuntu-24.04 }
+          - { arch: aarch64, runner: ubuntu-24.04-arm }
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with:
+          workspaces: app
+      - run: make test
+      # The determinism suite writes a state digest per type; it must be identical
+      # on every target. Each leg publishes its manifest for the `determinism` job.
+      - run: make determinism-manifest | tee determinism-${{ matrix.arch }}.txt
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: determinism-${{ matrix.arch }}
+          path: determinism-${{ matrix.arch }}.txt
+          if-no-files-found: error
+
+  msrv:
+    name: msrv (1.96)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # pinned action; toolchain set below
+        with:
+          toolchain: "1.96.0"
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with:
+          workspaces: app
+      - run: make msrv
+
+  wasm:
+    name: build (wasm32)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with:
+          workspaces: app
+      # The determinism-sensitive crates must link with no host dependence;
+      # undefined wasm symbols are a hard error, so this catches accidental
+      # host-coupling.
+      - run: make wasm
+
+  docs:
+    name: rustdoc
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with:
+          workspaces: app
+      - run: make doc
+
+  supply-chain:
+    name: cargo-deny
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+      - uses: taiki-e/install-action@7a79fe8c3a13344501c80d99cae481c1c9085912 # v2
+        with:
+          tool: cargo-deny
+      - run: make deny
+
+  determinism:
+    name: cross-target determinism
+    needs: test
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          path: digests
+      # The state digests must be byte-identical across architectures; a diff is
+      # the whole test. Guard against an empty manifest so a no-op can't pass.
+      - name: Compare digests across targets
+        run: |
+          x86=digests/determinism-x86_64/determinism-x86_64.txt
+          arm=digests/determinism-aarch64/determinism-aarch64.txt
+          test -s "$x86" || { echo "::error::no determinism digests were produced"; exit 1; }
+          diff -u "$x86" "$arm"
+          echo "determinism digests are identical across x86_64 and aarch64"
+
+  # The planted-defect fixtures and the conformance/scenario suites already run
+  # in `test`, and `determinism` diffs the seeded state digests across targets.
+  # Fuzzing and mutation testing run in `quality.yml` (fuzz blocks on a crash;
+  # mutants is advisory).

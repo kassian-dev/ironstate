@@ -1,0 +1,24 @@
+[package]
+name = "ironstate-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+ironstate = { path = "..", default-features = false, features = ["derive", "restore"] }
+serde = { version = "1", features = ["derive"] }
+
+[[bin]]
+name = "restore"
+path = "fuzz_targets/restore.rs"
+test = false
+doc = false
+bench = false
+
+# Detach from the app/ workspace so cargo-fuzz manages this crate on its own and
+# it never enters `cargo build --workspace`, the MSRV check, or `cargo deny`.
+[workspace]

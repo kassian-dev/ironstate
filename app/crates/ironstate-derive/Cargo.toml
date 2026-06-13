@@ -1,0 +1,22 @@
+[package]
+name = "ironstate-derive"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Derive macros for ironstate (StateMachine, Event)"
+readme = "README.md"
+keywords = ["state-machine", "derive", "macro", "fsm"]
+categories = ["development-tools::procedural-macro-helpers"]
+
+[lib]
+proc-macro = true
+
+[dependencies]
+syn.workspace = true
+quote.workspace = true
+proc-macro2.workspace = true
+
+[dev-dependencies]
+trybuild.workspace = true

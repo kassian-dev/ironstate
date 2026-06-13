@@ -1,0 +1,47 @@
+[package]
+name = "ironstate-aggregate"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Deterministic aggregates: decide/evolve, entropy, redaction, StableHash"
+readme = "README.md"
+keywords = ["event-sourcing", "cqrs", "deterministic", "aggregate", "redaction"]
+categories = ["data-structures", "game-development"]
+
+[dependencies]
+# The phase machine is a real core machine, so the aggregate tier builds on core.
+# Specified by path (not inherited) so default-features can be off: that keeps
+# core's host-only proptest out of the wasm build; the aggregate's own `proptest`
+# feature re-enables it for x86 property tests.
+ironstate = { version = "0.1", path = "../ironstate", default-features = false, features = ["derive"] }
+ironstate-aggregate-derive = { workspace = true, optional = true }
+thiserror.workspace = true
+# Deterministic entropy is core to an aggregate, so the seekable ChaCha RNG is
+# always present. rand_chacha pulls no OS-entropy backend, so it builds on wasm.
+rand_chacha = { workspace = true }
+rustc-stable-hash = { workspace = true, optional = true }
+blake3 = { workspace = true, optional = true }
+proptest = { workspace = true, optional = true }
+serde = { workspace = true, optional = true }
+
+[dev-dependencies]
+trybuild.workspace = true
+serde = { workspace = true }
+serde_json = "1"
+
+[features]
+default = ["derive", "restore"]
+derive = ["dep:ironstate-aggregate-derive"]
+redaction = []
+stablehash = ["dep:rustc-stable-hash"]
+audit = ["stablehash", "dep:blake3"]
+proptest = ["dep:proptest", "stablehash", "ironstate/proptest"]
+serde = ["dep:serde"]
+# Versioned events: the `Versioned` derive decodes a stored {version, payload}
+# envelope through core's restore path, so it forwards to `ironstate/restore`.
+restore = ["ironstate/restore"]
+
+[package.metadata.docs.rs]
+all-features = true

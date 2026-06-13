@@ -1,0 +1,10 @@
+# cargo-release / release-plz configuration.
+#
+# Each family crate publishes and versions on its own train, so releases are
+# tagged per crate rather than batched. During 0.x a breaking change is a minor
+# bump and ships with migration notes; determinism- or redaction-guarantee
+# defects are treated as P0 and never bundled into an unrelated release.
+allow-branch = ["main"]
+consolidate-commits = false
+tag-prefix = "{{crate_name}}-v"
+sign-tag = false

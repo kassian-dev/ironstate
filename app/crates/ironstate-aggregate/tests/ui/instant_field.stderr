@@ -1,0 +1,7 @@
+error: wall-clock values cannot be stable-hashed.
+       They are not state and not deterministic; time must enter as data.
+       Use LogicalTime, or mark the field `#[stable_hash(skip)]`.
+ --> tests/ui/instant_field.rs:6:14
+  |
+6 |     started: Instant,
+  |              ^^^^^^^

@@ -40,6 +40,7 @@ jobs:
       - run: make fuzz
         env:
           FUZZ_SECONDS: "180"
+          FUZZ_TARGET: x86_64-unknown-linux-gnu # gnu host: the prebuilt cargo-fuzz otherwise targets musl
       # Fuzzing is non-deterministic: a crash found one run may not resurface the
       # next. So on a crash, fold the reproducer into the corpus — libFuzzer
       # replays the whole corpus at startup, so it re-crashes deterministically
@@ -89,6 +90,7 @@ jobs:
       - name: Mutation-test the diff
         if: steps.diff.outputs.lines != '0'
         continue-on-error: true # advisory: surviving mutants must not fail the build
+        timeout-minutes: 15 # bound the run; a huge diff (e.g. the bootstrap PR) reports partial results
         # Generous per-mutant timeout: the seeded suite runs in seconds, so a
         # finite mutant finishes well under this — only a true hang times out.
         # This keeps results deterministic (a survivor drops off only when the

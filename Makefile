@@ -11,6 +11,10 @@ WASM_TARGET := wasm32-unknown-unknown
 MSRV := 1.96.0
 # Wall-clock budget for a `make fuzz` run; CI overrides it.
 FUZZ_SECONDS ?= 180
+# Build target for fuzzing; empty = the host. CI pins the gnu host because the
+# prebuilt cargo-fuzz binary otherwise defaults to its own musl triple (no std,
+# and ASan can't link a static libc).
+FUZZ_TARGET ?=
 # Extra args for `make mutants` (CI passes `--in-diff` to scope to changed lines).
 MUTANTS_ARGS ?=
 
@@ -72,7 +76,7 @@ deny: ## Supply-chain gate: licenses, advisories, duplicate majors
 
 .PHONY: fuzz
 fuzz: ## Fuzz the versioned-restore decode path (needs nightly + cargo-fuzz); FUZZ_SECONDS to tune
-	cd $(APP)/crates/ironstate && $(CARGO) +nightly fuzz run restore -- -max_total_time=$(FUZZ_SECONDS) -max_len=4096
+	cd $(APP)/crates/ironstate && $(CARGO) +nightly fuzz run restore $(if $(FUZZ_TARGET),--target $(FUZZ_TARGET),) -- -max_total_time=$(FUZZ_SECONDS) -max_len=4096
 
 .PHONY: mutants
 mutants: ## Mutation-test the code (cargo-mutants); MUTANTS_ARGS='--in-diff <patch>' to scope to changes

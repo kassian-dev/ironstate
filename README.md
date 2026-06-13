@@ -292,17 +292,15 @@ those crates**, in dependency order, and tags each. The `examples/*` crates are
 `publish = false`, and release-plz maintains the changelog (the hand-written
 `0.1.0` entry seeds it).
 
-While the crates are still being bootstrapped on crates.io, this workflow runs
-on **manual dispatch only** — the push-to-`main` trigger is commented out in
-`release.yml` and re-enabled once each crate has had its first publish and
-trusted-publisher registration.
+The same workflow is also wired to a manual `workflow_dispatch` for one-off
+releases.
 
 Security practices across the workflows:
 
 - **Trusted Publishing (OIDC)** — crates.io issues a short-lived token at
-  runtime, so there is **no long-lived `CARGO_REGISTRY_TOKEN` secret**. (One-time
-  setup: register this repo + workflow as a trusted publisher per crate, after
-  each crate's first manual publish.)
+  runtime, so there is **no long-lived `CARGO_REGISTRY_TOKEN` secret**. (Each
+  crate was bootstrapped with one manual publish, then this repo + workflow
+  registered as its trusted publisher — a one-time setup, now complete.)
 - **Build-provenance attestations** — published artifacts get SLSA provenance
   signed via Sigstore and logged in the public Rekor transparency log.
 - **Signed release tags** and **SHA-pinned actions**, with **Dependabot**

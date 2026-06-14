@@ -5,6 +5,12 @@ All notable changes to `ironstate` are recorded here. The format is based on
 entries are maintained by release-plz. This crate is the lifecycle-machine core
 of the [ironstate](https://github.com/kassian-dev/ironstate) family.
 
+## [0.1.1](https://github.com/kassian-dev/ironstate/compare/ironstate-v0.1.0...ironstate-v0.1.1) - 2026-06-14
+
+### Other
+
+- adopt per-crate changelogs and add a security policy ([#9](https://github.com/kassian-dev/ironstate/pull/9))
+
 ## [0.1.0] - 2026-06-13
 
 The initial release.

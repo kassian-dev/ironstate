@@ -124,6 +124,10 @@ ironstate_aggregate::leak_test!(MatchState, excluding = [PlayCard]); // no cover
 | `proptest` | `test!`/`determinism_test!`/`leak_test!`; implies `stablehash` |
 | `serde` | `Serialize`/`Deserialize` on `DrawPos`/`LogicalTime` |
 
+## Learn more
+
+New here? The [guide](https://github.com/kassian-dev/ironstate/blob/main/docs/guide.md) is a step-by-step walkthrough from a first machine through aggregates and the event journal. For complete runnable programs, see the [`ledger`](https://github.com/kassian-dev/ironstate/tree/main/app/crates/examples/ledger) example (`decide`/`evolve` with a non-negative-balance invariant) and [`hidden-info`](https://github.com/kassian-dev/ironstate/tree/main/app/crates/examples/hidden-info) (redaction end to end). For what each test layer proves, see [docs/testing.md](https://github.com/kassian-dev/ironstate/blob/main/docs/testing.md).
+
 ## The ironstate family
 
 - [`ironstate`](https://crates.io/crates/ironstate) — core lifecycle machines

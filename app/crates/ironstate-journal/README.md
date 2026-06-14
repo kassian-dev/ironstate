@@ -32,6 +32,10 @@ feature `sim`, `scenario_test!` drives a seeded whole-tier fault simulation
 to outcomes, with the `FaultInjector`/`ReferenceRun` testkit exposed for
 consumers' own deterministic-simulation harnesses.
 
+## Learn more
+
+New here? The [guide](https://github.com/kassian-dev/ironstate/blob/main/docs/guide.md) is a step-by-step walkthrough from a first machine through aggregates and the event journal. For complete runnable programs, see the [`ledger`](https://github.com/kassian-dev/ironstate/tree/main/app/crates/examples/ledger) example (`execute`/`resume` over a journal) and [`async-store`](https://github.com/kassian-dev/ironstate/tree/main/app/crates/examples/async-store) (a real async storage adapter kept under the conformance suite). For what each test layer proves, see [docs/testing.md](https://github.com/kassian-dev/ironstate/blob/main/docs/testing.md).
+
 ## The ironstate family
 
 - [`ironstate`](https://crates.io/crates/ironstate) — core lifecycle machines

@@ -9,6 +9,7 @@ members = [
     "crates/examples/hidden-info",
     "crates/examples/release-pipeline",
     "crates/examples/ledger",
+    "crates/examples/catalog-ctx",
 ]
 
 [workspace.package]

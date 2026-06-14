@@ -1,0 +1,10 @@
+# cargo-mutants configuration.
+#
+# Mutation testing earns its keep on the library crates, whose tests are a
+# coverage obligation (see the `planted_*` tests that exist precisely to prove
+# the harness catches injected faults). The example crates under crates/examples
+# are teaching artifacts: their tests assert the *pattern* — determinism, rewind,
+# the journal contract — not exhaustive value coverage, and their `main`/demo
+# bodies are inherently uncatchable by mutation. Mutating them only produces
+# false positives, so they are excluded.
+exclude_globs = ["crates/examples/**"]

@@ -235,6 +235,10 @@ demo whose test module is an end-to-end test of a realistic use case:
   operator- and external-gated states, declared invariants, `analyze!`/`test!`.
 - **`ledger`** — an account as an aggregate over a journal: deposits/withdrawals,
   a non-negative-balance invariant, `execute`/`resume`, and `determinism_test!`.
+- **`async-store`** — an async, authoritative store (think tokio-postgres) made
+  durable without implementing the synchronous `Journal`: the append-before-ack
+  loop via `prepare`/`commit`/`abort` around an awaited append, with a sync twin
+  held to `journal_contract_test!`.
 
 ---
 

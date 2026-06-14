@@ -10,6 +10,7 @@ members = [
     "crates/examples/release-pipeline",
     "crates/examples/ledger",
     "crates/examples/catalog-ctx",
+    "crates/examples/async-store",
 ]
 
 [workspace.package]

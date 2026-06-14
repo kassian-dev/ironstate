@@ -9,7 +9,9 @@
 //!
 //! - [`execute`] is the everyday loop — validate a command, append the events it
 //!   produces, then apply them — so the log and the in-memory state never
-//!   disagree, even if the process crashes mid-step.
+//!   disagree, even if the process crashes mid-step. A store that can't be a
+//!   synchronous [`Journal`] (an async one, say) reuses the same discipline via
+//!   [`prepare`] + [`Prepared::commit`]/[`Prepared::abort`] around its own append.
 //! - [`resume`] rebuilds an aggregate from the log (after a restart, say), and
 //!   [`replay`]/[`fork`](Journal::fork) reconstruct or branch its history.
 //! - [`replay_hash`] returns a collision-resistant digest of the final state, so
@@ -36,7 +38,7 @@ mod sim;
 mod subscription;
 
 pub use journal::{ExecuteError, Journal, JournalError, Seq, Snapshot, VersionedEvent};
-pub use replay::{ResumeError, execute, replay, replay_hash, resume};
+pub use replay::{Prepared, ResumeError, execute, prepare, replay, replay_hash, resume};
 pub use subscription::{Delivered, React, StreamId, Subscription};
 
 #[cfg(feature = "memory")]

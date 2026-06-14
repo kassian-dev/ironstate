@@ -62,6 +62,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "catalog-ctx"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "ironstate",
+ "ironstate-aggregate",
+ "ironstate-journal",
+ "proptest",
+ "thiserror",
+]
+
+[[package]]
 name = "cc"
 version = "1.2.64"
 source = "registry+https://github.com/rust-lang/crates.io-index"

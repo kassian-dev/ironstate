@@ -1,0 +1,20 @@
+[package]
+name = "catalog-ctx"
+version = "0.0.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+description = "Adopting ironstate's owned `type Ctx`: a catalog and a live entropy stream carried by one owned context, with `execute` owning the rewind"
+
+[dependencies]
+ironstate = { workspace = true }
+ironstate-aggregate = { workspace = true, features = ["proptest"] }
+ironstate-journal = { workspace = true, features = ["sim"] }
+anyhow.workspace = true
+thiserror.workspace = true
+proptest.workspace = true
+
+[[bin]]
+name = "catalog-ctx"
+path = "src/main.rs"

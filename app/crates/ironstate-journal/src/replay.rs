@@ -1,10 +1,10 @@
 //! Replay, resume, the persistent `execute` loop, and the audit digest.
 
-use crate::journal::{ExecuteError, Journal, Seq, Snapshot, VersionedEvent};
+use crate::journal::{ExecuteError, Journal, JournalError, Seq, Snapshot, VersionedEvent};
 use ironstate::RestoreError;
 use ironstate_aggregate::{
-    Aggregate, AggregateRules, AuditDigest, CtxEntropy, DrawPos, Seed, SeededEntropy, StableHash,
-    audit_digest,
+    Aggregate, AggregateRules, AuditDigest, CtxEntropy, DrawPos, Rejection, Seed, SeededEntropy,
+    StableHash, audit_digest,
 };
 
 /// Rebuild an aggregate from a base snapshot and the events that followed it.
@@ -88,6 +88,12 @@ impl std::error::Error for ResumeError {}
 /// On any failure after draws were consumed, the live entropy stream is rewound
 /// to the head position before returning, so a failed command leaves nothing
 /// observable: no state change, no position change, no journal change.
+///
+/// This is a thin sandwich: [`prepare`] (the pure decide + position capture),
+/// the journal's `append`, then [`Prepared::commit`] on success or
+/// [`Prepared::abort`] on failure. A store that cannot implement the synchronous
+/// [`Journal`] trait — an async one, say — reuses those same steps around its own
+/// awaited append instead of copying this discipline. See [`prepare`].
 pub fn execute<A, J>(
     journal: &mut J,
     aggregate: &mut Aggregate<A>,
@@ -99,37 +105,124 @@ where
     A::Ctx: CtxEntropy,
     J: Journal<A>,
 {
-    let head_pos = match journal.head() {
-        Some(head) => journal.entropy_pos(head).map_err(ExecuteError::Journal)?,
-        None => DrawPos(0),
-    };
+    let head = head_pos(journal).map_err(ExecuteError::Journal)?;
+    let prepared = prepare(aggregate, cmd, ctx, head).map_err(ExecuteError::Rejected)?;
 
-    let events = match aggregate.decide_only(cmd, ctx) {
-        Ok(events) => events,
-        Err(rejection) => {
-            rewind(ctx, head_pos);
-            return Err(ExecuteError::Rejected(rejection));
-        }
-    };
-
-    // The position after decide consumed its draws (or the head position for an
-    // entropy-free context).
-    let draws = ctx
-        .entropy_mut()
-        .map_or(head_pos, |entropy| entropy.draws());
-
-    match journal.append(&events, draws) {
+    match journal.append(prepared.events(), prepared.entropy_pos()) {
         Ok(seq) => {
-            for event in &events {
-                aggregate.evolve(event);
-            }
+            prepared.commit(aggregate);
             Ok(seq)
         }
         Err(error) => {
-            rewind(ctx, head_pos);
+            prepared.abort(ctx);
             Err(ExecuteError::Journal(error))
         }
     }
+}
+
+/// The entropy position recorded at the journal head, or `DrawPos(0)` if the
+/// journal is empty. An async store computes the equivalent from its head row.
+fn head_pos<A, J>(journal: &J) -> Result<DrawPos, JournalError>
+where
+    A: AggregateRules,
+    J: Journal<A>,
+{
+    match journal.head() {
+        Some(head) => journal.entropy_pos(head),
+        None => Ok(DrawPos(0)),
+    }
+}
+
+/// A decided-but-not-yet-durable command: the events `decide` produced, the
+/// entropy position they consumed, and the head position to rewind to if the
+/// append fails.
+///
+/// Hold one across the append, then [`commit`](Self::commit) it on success or
+/// [`abort`](Self::abort) it on failure. The append-before-evolve ordering, the
+/// entropy-position capture, and the rewind-on-failure all live here, so a caller
+/// — sync or async — supplies only the storage IO and cannot get the discipline
+/// wrong.
+#[must_use = "a Prepared must be committed or aborted, else the entropy stream is left advanced"]
+pub struct Prepared<A: AggregateRules> {
+    events: Vec<A::Event>,
+    draws: DrawPos,
+    head_pos: DrawPos,
+}
+
+impl<A: AggregateRules> Prepared<A> {
+    /// The events to append, in order.
+    pub fn events(&self) -> &[A::Event] {
+        &self.events
+    }
+
+    /// The entropy position to persist **atomically** with the events.
+    pub fn entropy_pos(&self) -> DrawPos {
+        self.draws
+    }
+
+    /// Apply the events after the append succeeded, advancing the in-memory
+    /// aggregate to match the durable log.
+    pub fn commit(self, aggregate: &mut Aggregate<A>) {
+        for event in &self.events {
+            aggregate.evolve(event);
+        }
+    }
+
+    /// Roll back after the append failed: rewind the entropy stream to the head
+    /// position so nothing is left observable. The aggregate was never evolved,
+    /// so it needs no change.
+    pub fn abort(self, ctx: &mut A::Ctx)
+    where
+        A::Ctx: CtxEntropy,
+    {
+        rewind(ctx, self.head_pos);
+    }
+}
+
+/// Run the pure half of the persistent loop: structural checks and `decide`,
+/// capturing the entropy position the draws consumed — **without** touching the
+/// journal or evolving the aggregate.
+///
+/// The caller supplies `head` (the position recorded at the journal head, or
+/// `DrawPos(0)` for an empty journal) and performs the append between this and
+/// [`Prepared::commit`] / [`Prepared::abort`]. [`execute`] is exactly this
+/// sandwich around a synchronous `Journal::append`; an async store reuses the same
+/// steps around its own awaited append:
+///
+/// ```ignore
+/// let head = pg.head_pos().await.map_err(ExecuteError::Journal)?;
+/// let prepared = prepare(&aggregate, cmd, ctx, head).map_err(ExecuteError::Rejected)?;
+/// match pg.append(prepared.events(), prepared.entropy_pos()).await {
+///     Ok(seq) => { prepared.commit(&mut aggregate); Ok(seq) }
+///     Err(e)  => { prepared.abort(ctx); Err(ExecuteError::Journal(e)) }
+/// }
+/// ```
+///
+/// On rejection the entropy stream is rewound to `head` before returning, so a
+/// rejected command leaves nothing observable.
+pub fn prepare<A>(
+    aggregate: &Aggregate<A>,
+    cmd: &A::Command,
+    ctx: &mut A::Ctx,
+    head: DrawPos,
+) -> Result<Prepared<A>, Rejection<A>>
+where
+    A: AggregateRules,
+    A::Ctx: CtxEntropy,
+{
+    let events = match aggregate.decide_only(cmd, ctx) {
+        Ok(events) => events,
+        Err(rejection) => {
+            rewind(ctx, head);
+            return Err(rejection);
+        }
+    };
+    let draws = ctx.entropy_mut().map_or(head, |entropy| entropy.draws());
+    Ok(Prepared {
+        events,
+        draws,
+        head_pos: head,
+    })
 }
 
 fn rewind<C: CtxEntropy>(ctx: &mut C, pos: DrawPos) {

@@ -8,7 +8,7 @@ use ironstate_aggregate::{
     StableHash, audit_digest,
 };
 use ironstate_journal::{
-    ExecuteError, Journal, MemoryJournal, Seq, Snapshot, execute, replay_hash, resume,
+    ExecuteError, Journal, MemoryJournal, Seq, Snapshot, execute, prepare, replay_hash, resume,
 };
 
 #[derive(StateMachine, StableHash, Clone, Debug, PartialEq)]
@@ -142,6 +142,72 @@ fn fork_agrees_on_position_at_the_fork_point() {
     // The fork is independent: appends to one do not change the other.
     assert_eq!(forked.head(), Some(Seq(2)));
     assert_eq!(journal.head(), Some(Seq(3)));
+}
+
+/// The `prepare` → `append` → `commit` steps `execute` composes must, driven by
+/// hand, land in exactly the same state, head, and head position as `execute`.
+#[test]
+fn prepare_commit_matches_execute() {
+    let seed = Seed([7; 32]);
+
+    // One pair driven by execute, one by the steps it composes.
+    let mut j_exec = MemoryJournal::new(genesis());
+    let mut a_exec = Aggregate::new(genesis()).unwrap();
+    let mut j_steps = MemoryJournal::new(genesis());
+    let mut a_steps = Aggregate::new(genesis()).unwrap();
+
+    for _ in 0..5 {
+        let mut ctx = ctx_at_head(&j_exec, &seed);
+        execute(&mut j_exec, &mut a_exec, &Command::Tick, &mut ctx).unwrap();
+
+        let head = j_steps
+            .head()
+            .map_or(DrawPos(0), |h| j_steps.entropy_pos(h).unwrap());
+        let mut ctx = ctx_at_head(&j_steps, &seed);
+        let prepared = prepare(&a_steps, &Command::Tick, &mut ctx, head).unwrap();
+        j_steps
+            .append(prepared.events(), prepared.entropy_pos())
+            .unwrap();
+        prepared.commit(&mut a_steps);
+    }
+
+    assert_eq!(a_exec.state(), a_steps.state());
+    assert_eq!(j_exec.head(), j_steps.head());
+    let head = j_exec.head().unwrap();
+    assert_eq!(
+        j_exec.entropy_pos(head).unwrap(),
+        j_steps.entropy_pos(head).unwrap(),
+    );
+}
+
+/// Aborting a prepared command (the path a failed append takes) rewinds the
+/// entropy stream to the head and leaves the aggregate and journal untouched.
+#[test]
+fn prepare_then_abort_leaves_nothing() {
+    let seed = Seed([5; 32]);
+    let mut journal = MemoryJournal::new(genesis());
+    let mut agg = Aggregate::new(genesis()).unwrap();
+
+    // One successful append, so the head sits past genesis.
+    let mut ctx = ctx_at_head(&journal, &seed);
+    execute(&mut journal, &mut agg, &Command::Tick, &mut ctx).unwrap();
+
+    let head_before = journal.head();
+    let total_before = agg.state().total;
+    let head = journal
+        .head()
+        .map_or(DrawPos(0), |h| journal.entropy_pos(h).unwrap());
+
+    // Prepare a Tick (which draws), then abort instead of appending.
+    let mut ctx = ctx_at_head(&journal, &seed);
+    let prepared = prepare(&agg, &Command::Tick, &mut ctx, head).unwrap();
+    assert!(ctx.entropy.draws() > head, "decide should have drawn");
+    prepared.abort(&mut ctx);
+
+    // Entropy rewound to head; state and journal unchanged.
+    assert_eq!(ctx.entropy.draws(), head);
+    assert_eq!(agg.state().total, total_before);
+    assert_eq!(journal.head(), head_before);
 }
 
 #[test]

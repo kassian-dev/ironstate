@@ -176,7 +176,7 @@ dependencies = [
 
 [[package]]
 name = "ironstate"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "ironstate-derive",
  "proptest",
@@ -187,7 +187,7 @@ dependencies = [
 
 [[package]]
 name = "ironstate-aggregate"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "blake3",
  "ironstate",
@@ -223,7 +223,7 @@ dependencies = [
 
 [[package]]
 name = "ironstate-journal"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "ironstate",
  "ironstate-aggregate",

@@ -52,8 +52,6 @@ ironstate::analyze!(Article);              // graph analysis: dead ends, unreach
 ironstate::test!(Article, cases = 1000);   // randomized property testing against your declared invariants
 ```
 
-New here? The [guide](https://github.com/kassian-dev/ironstate/blob/main/docs/guide.md) is a step-by-step walkthrough from a first machine through aggregates and the event journal.
-
 ## Cargo features
 
 All three are on by default.
@@ -65,6 +63,10 @@ All three are on by default.
 | `restore` | versioned restore: decode a stored `{version, payload}` envelope and migrate it forward (pulls in serde) |
 
 Building a plain in-memory machine with no serialization dependency? Set `default-features = false` and add back just `derive`.
+
+## Learn more
+
+New here? The [guide](https://github.com/kassian-dev/ironstate/blob/main/docs/guide.md) is a step-by-step walkthrough from a first machine through aggregates and the event journal. For a complete runnable program, see the [`release-pipeline`](https://github.com/kassian-dev/ironstate/tree/main/app/crates/examples/release-pipeline) example (operator/external-gated states, declared invariants, a pure transition function); the [full example set](https://github.com/kassian-dev/ironstate/tree/main/app/crates/examples) goes on through aggregates and the journal. For what each test layer proves, see [docs/testing.md](https://github.com/kassian-dev/ironstate/blob/main/docs/testing.md).
 
 ## The ironstate family
 

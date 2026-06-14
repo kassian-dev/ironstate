@@ -78,7 +78,8 @@ describe: stop and amend the spec (or file a decision record) first.
   `assets/brand.py` and rendered with resvg; the SVGs/PNGs are generated, never
   hand-edited (see `assets/README.md`).
 - `.github/workflows/` — `ci.yml` (the done-gate in CI), `quality.yml` (per-PR
-  fuzzing + mutation testing), `release.yml` (release-plz publishing).
+  fuzzing + mutation testing), `release.yml` (manual release-plz publishing,
+  `workflow_dispatch` only).
 
 ## Counter-intuitive things (don't "helpfully" undo)
 

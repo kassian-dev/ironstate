@@ -1,0 +1,38 @@
+name: Release PR
+
+# Dispatched by a maintainer from the Actions tab to open or refresh the release
+# PR: release-plz bumps the versions of the crates whose source changed since
+# their last release — and their dependents, since the bump cascades up the
+# family's dependency graph — and updates each bumped crate's changelog. Merging
+# that PR triggers the companion "Release" workflow (release.yml), which
+# publishes to crates.io. This job only touches the PR, so it needs no crates.io
+# credentials and no OIDC identity.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write # push the release branch
+  pull-requests: write # open/update the release PR
+
+jobs:
+  release-pr:
+    name: release-pr
+    runs-on: ubuntu-24.04
+    # Guard so a fork's manual dispatch is a no-op; only the canonical repo cuts releases.
+    if: ${{ github.repository_owner == 'kassian-dev' }}
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          fetch-depth: 0 # release-plz needs full history to detect changes
+
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+
+      - name: Run release-plz
+        uses: release-plz/action@e8792575c7f2366cf6ff3ccc33ead9ace5b691c7 # v0.5
+        with:
+          command: release-pr
+          # The Cargo workspace lives under app/.
+          manifest_path: app/Cargo.toml
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

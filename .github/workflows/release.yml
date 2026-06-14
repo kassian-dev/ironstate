@@ -1,32 +1,36 @@
 name: Release
 
-# Publishing is manual: this workflow runs only on workflow_dispatch, never on a
-# push, so a release happens only when a maintainer deliberately starts it from
-# the Actions tab. When run, release-plz opens (or refreshes) a release PR that
-# bumps the versions of the crates whose source changed and updates the
-# changelog; once that PR is merged, the next manual run publishes only those
-# crates to crates.io in dependency order and pushes a signed tag per release.
+# Publishing runs automatically when a release PR lands on main. A maintainer
+# dispatches the companion "Release PR" workflow (release-pr.yml) to open or
+# refresh the version-bump/changelog PR; merging that PR is a push to main by a
+# human (not GITHUB_TOKEN, so it does trigger workflows), which fires this job.
+# The `release` command is idempotent — it publishes only crates whose
+# Cargo.toml version is ahead of crates.io, so ordinary merges with no version
+# bump are a no-op and nothing ships until a release PR merges. When it does
+# publish, it does so in dependency order and pushes a tag per release.
+#
 # Assumes the crates are already bootstrapped — published once and registered as
 # trusted publishers (a one-time setup, not CI's job).
 #
 # Security: Trusted Publishing via OIDC (no long-lived CARGO_REGISTRY_TOKEN),
-# SLSA build-provenance attestations signed through Sigstore, signed tags, and
-# SHA-pinned actions.
+# SLSA build-provenance attestations signed through Sigstore, and SHA-pinned
+# actions.
 
 on:
-  workflow_dispatch:
+  push:
+    branches:
+      - main
 
 permissions:
   contents: write # create release commits, tags, and GitHub releases
-  pull-requests: write # open/update the release PR
   id-token: write # OIDC exchange for crates.io Trusted Publishing
   attestations: write # build-provenance attestations
 
 jobs:
-  release-plz:
-    name: release-plz
+  release:
+    name: release
     runs-on: ubuntu-24.04
-    # Guard so a fork's manual dispatch is a no-op; only the canonical repo publishes.
+    # Guard so forks never publish; only the canonical repo releases.
     if: ${{ github.repository_owner == 'kassian-dev' }}
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
@@ -43,6 +47,7 @@ jobs:
       - name: Run release-plz
         uses: release-plz/action@e8792575c7f2366cf6ff3ccc33ead9ace5b691c7 # v0.5
         with:
+          command: release
           # The Cargo workspace lives under app/.
           manifest_path: app/Cargo.toml
         env:

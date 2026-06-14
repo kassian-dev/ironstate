@@ -292,14 +292,17 @@ order is doc change → code → tests → gates. See [`AGENTS.md`](AGENTS.md),
 
 ## Releasing & supply-chain security
 
-Publishing is **manual but CI-driven** by [release-plz](https://release-plz.dev)
-(in [`.github/workflows/release.yml`](.github/workflows/release.yml)): the
-workflow runs only on `workflow_dispatch`, never on a push, so a release happens
-only when a maintainer starts it from the Actions tab. A run opens (or refreshes)
-a release PR that bumps the versions of the crates that changed — and their
-dependents, since release-plz cascades a bump up the family's dependency graph —
-and updates each bumped crate's changelog; once that PR is merged, the next
-manual run publishes **only those crates**, in dependency order, and tags each. The
+Publishing is **deliberate but CI-driven** by [release-plz](https://release-plz.dev),
+split across two workflows. A maintainer dispatches
+[`release-pr.yml`](.github/workflows/release-pr.yml) from the Actions tab to open
+(or refresh) a release PR that bumps the versions of the crates that changed — and
+their dependents, since release-plz cascades a bump up the family's dependency
+graph — and updates each bumped crate's changelog. Merging that PR is a push to
+`main`, which fires [`release.yml`](.github/workflows/release.yml): it publishes
+**only the bumped crates**, in dependency order, and tags each. That publish step
+is idempotent — it ships only crates whose version is ahead of crates.io, so
+ordinary merges with no bump are a no-op and nothing is published until a release
+PR lands. The
 `examples/*` crates are `publish = false`, and release-plz maintains a
 `CHANGELOG.md` per crate (each crate's `0.1.0` entry seeds it); the root
 [`CHANGELOG.md`](CHANGELOG.md) is a family index linking to them.

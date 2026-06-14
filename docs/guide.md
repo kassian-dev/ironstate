@@ -2,7 +2,7 @@
 
 A step-by-step walkthrough, from your first state machine to a deterministic, event-sourced aggregate with an audit log. No prior background in formal methods or event sourcing is assumed — every term is introduced as it comes up.
 
-If you'd rather read working code, the [`examples/`](../app/crates/examples) directory has three runnable, fully-tested programs that mirror this guide: `release-pipeline` (a core machine), `ledger` (an aggregate over a journal), and `hidden-info` (redaction and the whole stack together).
+If you'd rather read working code, the [`examples/`](../app/crates/examples) directory has runnable, fully-tested programs. Three of them mirror this guide: `release-pipeline` (a core machine), `ledger` (an aggregate over a journal), and `hidden-info` (redaction and the whole stack together).
 
 ## 1. What problem this solves
 
@@ -178,6 +178,8 @@ impl AggregateRules for Account {
 }
 ```
 
+The `Ctx` is how `decide` reaches the read-only data and the randomness it needs — a product catalog, configuration, the random stream. It's an *owned* associated type (it can't borrow a caller's lifetime), so reference data goes in by `Arc`; the [`catalog-ctx`](../app/crates/examples/catalog-ctx) example shows that pattern in full.
+
 `handle` runs the everyday loop in memory — structural checks, then `decide`, then `evolve` each event — and `why_not` tells you why a command would be rejected without running it. The [`ledger`](../app/crates/examples/ledger) example is a complete account aggregate.
 
 ### Randomness that replays
@@ -208,7 +210,7 @@ You say what the public "residue" of a secret is with `Conceal`, mark fields `#[
 #[derive(Redact, StableHash, Clone, Debug, PartialEq)]
 #[redact(principal = PlayerId)]
 struct Match {
-    board: Vec<Card>,                          // public
+    board: Vec<Card>,                              // public
     #[hidden] hands: PerPrincipal<PlayerId, Hand>, // owner sees cards, others a count
 }
 
@@ -219,12 +221,14 @@ The [`hidden-info`](../app/crates/examples/hidden-info) example is a full match 
 
 ## 9. Testing the hard things
 
-The same "definition is the test" idea covers the properties that are usually hardest to pin down:
+The same "definition is the test" idea covers the properties that are usually hardest to pin down. Each one applies to a specific shape of code — you reach for it when your type matches, not by default:
 
-- `determinism_test!(MatchState)` runs the aggregate twice from the same seed and fails if the two runs ever disagree, byte-for-byte. It catches sneaky non-determinism like iterating a `HashMap` inside `decide`.
-- `leak_test!(MatchState, excluding = [PlayCard])` checks that nothing one player keeps secret ever shows up in another player's view, across every operation except the ones that legitimately reveal information (which you list).
-- `journal_contract_test!(MatchState)` checks a journal adapter against seven properties (round-trip, position discipline, crash atomicity, …).
-- `scenario_test!(MatchState)` drives the whole thing under a seeded storm of injected faults — failed appends, crashes-and-resumes, forks — and checks the faults are invisible to the final outcome.
+- **If your aggregate draws randomness** (or you rely on replay or audit digests), add `determinism_test!(MatchState)`: it runs the aggregate twice from the same seed and fails if the two runs ever disagree, byte-for-byte — catching sneaky non-determinism like iterating a `HashMap` inside `decide`.
+- **If you have `#[hidden]` state** (per-viewer secrets), add `leak_test!(MatchState, excluding = [PlayCard])`: it checks that nothing one player keeps secret ever shows up in another player's view, across every operation except the ones that legitimately reveal information (which you list).
+- **If you write your own storage adapter**, add `journal_contract_test!(MatchState)`: it holds the adapter to seven properties (round-trip, position discipline, crash atomicity, …). If you use the built-in journal, you already have this.
+- **If durability under faults matters**, add `scenario_test!(MatchState)`: it drives the whole thing under a seeded storm of injected faults — failed appends, crashes-and-resumes, forks — and checks the faults are invisible to the final outcome.
+
+For the full test taxonomy — including the CI-only fuzz and mutation layers — and a table of when to reach for each macro, see [`testing.md`](testing.md).
 
 Determinism isn't a promise in prose; it's enforced. The `StableHash` derive refuses to compile a state that contains a float, a hash map, or a wall clock (each with a message telling you the fix), the entropy API has no way to read the clock, and `determinism_test!` fails the moment a run diverges.
 

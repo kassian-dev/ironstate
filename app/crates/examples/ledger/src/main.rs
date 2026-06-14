@@ -1,9 +1,4 @@
-//! An account ledger modeled as an ironstate aggregate over a journal.
-//!
-//! It shows the aggregate + journal tier end to end without redaction or
-//! entropy: a struct state changed by `decide`/`evolve`, a non-negative-balance
-//! invariant, a memory journal driven by `execute`, and `resume` reproducing
-//! the balance from the event log. Money is integer cents — no floats.
+#![doc = include_str!("../README.md")]
 
 use anyhow::Result;
 use ironstate::prelude::*;

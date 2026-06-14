@@ -227,7 +227,8 @@ storage adapter is judged against, and a seeded fault-schedule simulation
 ## Examples (end-to-end tests)
 
 Each example under [`app/crates/examples/`](app/crates/examples) is a runnable
-demo whose test module is an end-to-end test of a realistic use case:
+demo whose test module is an end-to-end test of a realistic use case; the
+[examples index](app/crates/examples) has a table to help you pick by use case.
 
 - **`hidden-info`** — a hidden-information card match: redaction, journaled
   entropy, a system timeout, and a subscription. The redaction integration template.
@@ -235,6 +236,9 @@ demo whose test module is an end-to-end test of a realistic use case:
   operator- and external-gated states, declared invariants, `analyze!`/`test!`.
 - **`ledger`** — an account as an aggregate over a journal: deposits/withdrawals,
   a non-negative-balance invariant, `execute`/`resume`, and `determinism_test!`.
+- **`catalog-ctx`** — adopting ironstate's owned `Ctx` in an engine that threaded
+  a borrowing context: read-only catalog by `Arc`, live entropy by `Box`, with
+  `execute` owning the rewind.
 - **`async-store`** — an async, authoritative store (think tokio-postgres) made
   durable without implementing the synchronous `Journal`: the append-before-ack
   loop via `prepare`/`commit`/`abort` around an awaited append, with a sync twin

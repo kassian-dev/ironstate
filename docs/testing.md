@@ -19,6 +19,25 @@ Each layer below states what it proves and where it lives. The done-gate is
 | Mutation | The suite actually catches bugs | `cargo-mutants --in-diff` on changed code; advisory (sticky PR comment, never blocks), every PR |
 | Compile-fail | Derive diagnostics teach (exact stderr) | `trybuild` fixtures |
 
+## When to reach for each (the macros you write)
+
+Most of the table above is machinery the family runs for you — fuzz, mutation,
+and compile-fail are CI/maintainer layers — or that every machine gets for free
+(`analyze!`). The macros you *decide* to add depend on what your type does:
+
+| Macro | Add it when… | Skip it when… |
+|-------|--------------|---------------|
+| `analyze!` | always, for any core `StateMachine` — free, no runtime, and it catches design errors (unreachable states, deadlocks, dead transitions) | — |
+| `test!` | your machine or aggregate has invariants or non-trivial rules worth exercising over random sequences | a trivial toggle with nothing to assert |
+| `determinism_test!` | your aggregate **draws entropy**, or you rely on replay / audit digests / cross-target reproducibility | no entropy and the state is trivially deterministic |
+| `leak_test!` | you have `#[hidden]` fields or per-viewer redaction (hidden-information domains) | nothing is concealed — there's nothing to leak |
+| `journal_contract_test!` | you **implement your own storage adapter** — it proves the seven durability properties | you use `MemoryJournal` or a provided adapter; it's already covered |
+| `scenario_test!` | durability under faults matters and you want crashes / forks / retries proven invisible to the outcome | an in-memory or non-durable use case |
+
+The two most often misapplied: `journal_contract_test!` is for *adapter authors*,
+not every consumer, and `leak_test!` only applies once something is `#[hidden]`.
+The [examples](../app/crates/examples) show the common combinations.
+
 ## Rules
 
 - **Red tests are executable specifications.** Unbuilt features live as
@@ -90,8 +109,11 @@ and the rustdoc building under `-D warnings`.
 
 - **Examples as end-to-end tests** — done: `hidden-info` (redaction + journal +
   subscription, all five macros), `release-pipeline` (a core lifecycle machine),
-  and `ledger` (an aggregate over a journal). Each example's test module is an
-  e2e test of a realistic use case.
+  `ledger` (an aggregate over a journal), `catalog-ctx` (the owned `Ctx`: a
+  catalog plus a live entropy stream), and `async-store` (an async adapter kept
+  under `journal_contract_test!` by a sync twin). Each example's test module is an
+  e2e test of a realistic use case; the [examples index](../app/crates/examples)
+  maps each to the tier and test layers it exercises.
 
 The proptest `subscription_test!` over generated redelivery remains an
 enhancement on top of the tested in-process `Subscription`.

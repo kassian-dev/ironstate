@@ -29,6 +29,19 @@ pub fn replay<A: AggregateRules>(
 /// The resume position is the one recorded **at the head**, because decides
 /// between the latest snapshot and the head consumed draws — using
 /// `snapshot.entropy_pos` instead is the canonical adapter bug.
+///
+/// ```ignore
+/// // On startup: rebuild from the latest snapshot plus the events after it,
+/// // with the entropy stream reopened at the head — ready to `execute` again.
+/// let (aggregate, entropy) = resume(&journal, &seed)?;
+/// ```
+///
+/// # Errors
+///
+/// Returns [`ResumeError::NoBase`] if the journal was never seeded with a
+/// genesis snapshot, [`ResumeError::Journal`] if a read failed, or
+/// [`ResumeError::Restore`] if a stored event or snapshot could not be upcast to
+/// the current schema.
 pub fn resume<A, J>(journal: &J, seed: &Seed) -> Result<(Aggregate<A>, SeededEntropy), ResumeError>
 where
     A: AggregateRules,
@@ -94,6 +107,20 @@ impl std::error::Error for ResumeError {}
 /// [`Prepared::abort`] on failure. A store that cannot implement the synchronous
 /// [`Journal`] trait — an async one, say — reuses those same steps around its own
 /// awaited append instead of copying this discipline. See [`prepare`].
+///
+/// # Errors
+///
+/// Returns [`ExecuteError::Rejected`] if the command never produced events (a
+/// structural or domain rejection), or [`ExecuteError::Journal`] if the append
+/// failed. Both leave the aggregate and the entropy stream where they started.
+///
+/// ```ignore
+/// match execute(&mut journal, &mut aggregate, &cmd, &mut ctx) {
+///     Ok(seq) => { /* durably appended at `seq`; the aggregate is up to date */ }
+///     Err(ExecuteError::Rejected(why)) => { /* surface the rejection to the caller */ }
+///     Err(ExecuteError::Journal(err)) => { /* storage failed; nothing changed */ }
+/// }
+/// ```
 pub fn execute<A, J>(
     journal: &mut J,
     aggregate: &mut Aggregate<A>,

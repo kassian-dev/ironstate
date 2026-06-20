@@ -1,5 +1,9 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/kassian-dev/ironstate/main/assets/wordmark.png" alt="ironstate" width="360">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/kassian-dev/ironstate/main/assets/wordmark-dark.png">
+    <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/kassian-dev/ironstate/main/assets/wordmark-light.png">
+    <img src="https://raw.githubusercontent.com/kassian-dev/ironstate/main/assets/wordmark.png" alt="ironstate" width="360">
+  </picture>
 </p>
 
 <p align="center"><strong>Verified state machines for humans and AI agents.</strong></p>
@@ -54,8 +58,9 @@ keeps the two from quietly contaminating each other.
 | [`ironstate-journal`](app/crates/ironstate-journal) | Event journal: append/snapshot/replay/fork, entropy positions, versioned upcasting, subscriptions, seeded simulation |
 
 New here? The **[guide](docs/guide.md)** is a step-by-step walkthrough from a
-first machine to a deterministic, event-sourced aggregate. API reference is on
-docs.rs (one page per crate); build it locally with `make doc`.
+first machine to a deterministic, event-sourced aggregate; [`docs/`](docs)
+indexes the rest — design, testing, decisions — with a reading order. API
+reference is on docs.rs (one page per crate); build it locally with `make doc`.
 
 ---
 
@@ -146,14 +151,18 @@ ironstate::test!(Article, seed = 0xDEC0DE);           // reproducible
 ```
 
 Invariants are optional and declared via the `Invariants` trait; `test!` runs
-either way (it always checks structural enforcement and absence of panics):
+either way (it always checks structural enforcement and absence of panics). They
+earn their keep on a condition the structure can't state on its own — a bound on
+the *data* a state carries:
 
 ```rust,ignore
-impl Invariants for Article {
+// A cart whose `Shopping` state carries its running item count.
+impl Invariants for Cart {
     fn invariants() -> Vec<Invariant<Self, Self::Event>> {
-        vec![Invariant::custom("archived is permanent")
-            .assert(|before, _event, after| {
-                before != &Article::Archived || after.is_none()
+        vec![Invariant::custom("a cart never holds more than 50 items")
+            .assert(|_before, _event, after| match after {
+                Some(Cart::Shopping { items }) => *items <= 50,
+                _ => true,
             })]
     }
 }

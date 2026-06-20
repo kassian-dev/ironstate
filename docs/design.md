@@ -97,8 +97,16 @@ the version, with the trivial identity migration as the cost.
 
 - **actor** — who issued a command (a consumer type, in `Ctx`).
 - **principal** — who is looking at state (a consumer type, in `#[redact]`).
+- **Ctx** — the `decide` context: entropy, actor, and logical time. An owned
+  associated type, so reference data enters by `Arc` rather than by borrow.
 - **residue** — the `Conceal` output; declared public.
+- **listener** — a core-machine callback fired at a transition (`on_transition` /
+  `on_rejection`); observes only, never alters the move.
 - **position** (`DrawPos`) — count of journaled entropy draws.
 - **head** — the latest `Seq`.
+- **snapshot** — a periodic copy of an aggregate's rebuilt state; `resume`
+  replays from the latest one rather than from genesis.
+- **subscription** — reads one aggregate's events and issues commands to another;
+  idempotent by `(StreamId, Seq)`.
 - **probe** — an uncounted entropy fork for speculation (`why_not`).
 - **`[proven]` / `[sampled]`** — holds by construction vs. observed over a corpus.

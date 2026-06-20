@@ -1,5 +1,9 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/kassian-dev/ironstate/main/assets/wordmark.png" alt="ironstate" width="320">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/kassian-dev/ironstate/main/assets/wordmark-dark.png">
+    <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/kassian-dev/ironstate/main/assets/wordmark-light.png">
+    <img src="https://raw.githubusercontent.com/kassian-dev/ironstate/main/assets/wordmark.png" alt="ironstate" width="320">
+  </picture>
 </p>
 
 <p align="center"><strong>Verified state machines for humans and AI agents.</strong></p>

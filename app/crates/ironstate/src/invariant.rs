@@ -57,6 +57,36 @@ impl<S, E> PartialInvariant<S, E> {
 /// Optional: a machine without an `Invariants` impl is still verified for its
 /// structural properties by `test!`. Implement this to add domain-specific
 /// checks on top.
+///
+/// Each invariant is a description paired with a closure over the step
+/// `(before, event, after)`, where `after` is `Some(state)` when the transition
+/// committed and `None` when it was rejected. Return `true` while the property
+/// holds; `test!` reports the description and the shrunk event sequence when it
+/// doesn't.
+///
+/// # Examples
+///
+/// An invariant is most useful for a property the structure can't express on its
+/// own — a condition on the *data* a state carries. Here `Charging` holds a
+/// charge level, and the property is a bound on that number rather than on which
+/// variant we're in:
+///
+/// ```ignore
+/// // enum Battery { Empty, Charging { percent: u8 }, Full }
+///
+/// impl Invariants for Battery {
+///     fn invariants() -> Vec<Invariant<Self, Self::Event>> {
+///         vec![
+///             Invariant::custom("charge never exceeds 100%").assert(
+///                 |_before, _event, after| match after {
+///                     Some(Battery::Charging { percent }) => *percent <= 100,
+///                     _ => true,
+///                 },
+///             ),
+///         ]
+///     }
+/// }
+/// ```
 pub trait Invariants: StateMachine
 where
     Self::Event: EventKind,

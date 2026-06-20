@@ -5,6 +5,12 @@ on [Keep a Changelog](https://keepachangelog.com/); from the next release on, th
 entries are maintained by release-plz. This crate is the journal tier of the
 [ironstate](https://github.com/kassian-dev/ironstate) family.
 
+## [0.1.3](https://github.com/kassian-dev/ironstate/compare/ironstate-journal-v0.1.2...ironstate-journal-v0.1.3) - 2026-06-20
+
+### Other
+
+- Additional snippets of examples ([#19](https://github.com/kassian-dev/ironstate/pull/19))
+
 ## [0.1.2](https://github.com/kassian-dev/ironstate/compare/ironstate-journal-v0.1.1...ironstate-journal-v0.1.2) - 2026-06-14
 
 ### Other

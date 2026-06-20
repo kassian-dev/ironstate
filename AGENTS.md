@@ -7,6 +7,7 @@ cite it. When code and a doc disagree, the code is wrong until the doc is amende
 
 ## Reading list
 
+- `docs/README.md` — the documentation index and the reading order for everything below.
 - `docs/guide.md` — a step-by-step tutorial for newcomers (build a machine, an
   aggregate, a journal). The gentlest entry point.
 - `docs/design.md` — the family's design, distilled: the two paradigms, the
@@ -112,6 +113,11 @@ a stale map (this has been missed before):
   version — by maintainer preference.
 - **Code comments stand on their own** — they never cite spec/doc section
   numbers. Explain the reason in the comment itself.
+- **Crate-README links are absolute, repo-doc links are relative — on purpose.**
+  A published crate README renders on crates.io and docs.rs, where relative paths
+  break, so links in `app/crates/*/README.md` use absolute `github.com` /
+  `crates.io` URLs. The root `README.md` and everything under `docs/` are
+  GitHub-only and use relative paths. Don't unify the two styles.
 - **Event enums require `#[derive(Event)]`.** The `#[event_kind]` /
   `#[likelihood]` attributes need a derive to be legal and read; this is a
   deliberate addition over the spec's "plain enum" sketch.

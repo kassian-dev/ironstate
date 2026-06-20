@@ -12,9 +12,11 @@ The palette is two-tone with a clear hierarchy: **amber is the machine/notation*
 |-------|-----|------|
 | Amber | `#f59e0b` | arrow + parentheses fill, the `26` accent |
 | Dark amber | `#b45309` | outline on the arrow + parentheses |
-| Slate | `#1f2933` → `#141b22` | tile fill (gradient) |
+| Slate | `#1f2933` → `#141b22` | tile fill (gradient), wordmark text on light |
 | Slate edge | `#3b4a55` | tile border |
 | Off-white | `#e8edf2` | the `Fe` symbol |
+| Slate gray | `#9fb3c4` | social subtitle, wordmark text on dark |
+| Mid gray | `#64748b` | neutral wordmark text (legible on light or dark) |
 
 ## Files
 
@@ -22,10 +24,14 @@ The palette is two-tone with a clear hierarchy: **amber is the machine/notation*
 |------|------|-----------------|
 | `logo.svg` / `logo.png` | 256² / 512² | docs.rs sidebar logo (`html_logo_url`) |
 | `favicon-32.png` | 32² | docs.rs favicon (`html_favicon_url`) |
-| `wordmark.svg` / `wordmark.png` | 760×220 | README hero, light-background lockup |
+| `wordmark.svg` / `wordmark.png` | 760×220 | README hero — neutral mid-gray, the `<picture>` fallback |
+| `wordmark-light.svg` / `wordmark-light.png` | 760×220 | wordmark for light backgrounds (dark slate text) |
+| `wordmark-dark.svg` / `wordmark-dark.png` | 760×220 | wordmark for dark backgrounds (slate-gray text) |
 | `social-preview.svg` / `social-preview.png` | 1280×640 | GitHub social preview (upload via repo Settings) |
 
 The PNGs are what's embedded (Markdown and docs.rs reference them); the SVGs are the scalable masters.
+
+The README hero swaps the wordmark by color scheme with a `<picture>`: a `prefers-color-scheme: dark`/`light` source picks the crisp variant, and the neutral `wordmark.png` is the fallback. GitHub honors the swap by theme. docs.rs embeds the crate README (`#![doc = include_str!("../README.md")]`) but keys the media query off the **OS** color scheme, not its own light/dark/ayu switch — so the neutral fallback is what keeps it legible there regardless of the in-page theme. The sidebar logo is separate (`logo.png` via `html_logo_url`) and theme-independent.
 
 ## Regenerating
 

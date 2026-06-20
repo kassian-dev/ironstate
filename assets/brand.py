@@ -19,6 +19,8 @@ ROOT = os.path.dirname(os.path.abspath(__file__))
 
 SF, SB = "#1f2933", "#3b4a55"      # slate tile fill / border
 WH = "#e8edf2"                      # Fe
+SG = "#9fb3c4"                      # social-preview gray (subtitle + dark wordmark)
+GM = "#64748b"                      # neutral wordmark gray, legible on light or dark
 AF, AB = "#f59e0b", "#b45309"      # amber accent fill / darker-amber outline
 FONT = "Helvetica, Arial, sans-serif"
 DEFS = ('<defs><linearGradient id="tg" x1="0" y1="0" x2="0" y2="1">'
@@ -91,11 +93,21 @@ def build():
     m, (x0, y0, x1, y1) = mark(90)
     write("logo.svg", 256, 256, group(m, 128 - (x0 + x1) / 2, 128 - (y0 + y1) / 2))
 
-    # wordmark: mark (left) + "ironstate" (760x220, light bg)
+    # wordmark: mark (left) + "ironstate" (760x220). Three text colors so the
+    # README <picture> serves a crisp variant per color scheme, with the neutral
+    # mid-gray default staying legible on any background — docs.rs embeds the
+    # README but keys the swap off the OS scheme, not its own theme switch.
     m, (x0, y0, x1, y1) = mark(100)
     dx, dy = 16 - x0, 110 - (y0 + y1) / 2
-    write("wordmark.svg", 760, 220, group(m, dx, dy) +
-          f'\n  <text x="{(x1+dx)+30:.0f}" y="144" font-family="{FONT}" font-size="98" font-weight="800" fill="{SF}">ironstate</text>')
+
+    def wm(fill):
+        return (group(m, dx, dy) +
+                f'\n  <text x="{(x1+dx)+30:.0f}" y="144" font-family="{FONT}" '
+                f'font-size="98" font-weight="800" fill="{fill}">ironstate</text>')
+
+    write("wordmark.svg", 760, 220, wm(GM))         # neutral default / fallback
+    write("wordmark-light.svg", 760, 220, wm(SF))   # dark slate, light backgrounds
+    write("wordmark-dark.svg", 760, 220, wm(SG))    # social gray, dark backgrounds
 
     # social card: mark (left) + text block (right), dark bg
     m, (x0, y0, x1, y1) = mark(176)
@@ -103,8 +115,8 @@ def build():
     tx = 560
     write("social-preview.svg", 1280, 640, group(m, dx, dy) +
           f'\n  <text x="{tx}" y="262" font-family="{FONT}" font-size="116" font-weight="800" fill="{WH}">ironstate</text>'
-          f'\n  <text x="{tx+2}" y="332" font-family="{FONT}" font-size="40" font-weight="400" fill="#9fb3c4">Verified state machines</text>'
-          f'\n  <text x="{tx+2}" y="384" font-family="{FONT}" font-size="40" font-weight="400" fill="#9fb3c4">for humans and AI agents</text>'
+          f'\n  <text x="{tx+2}" y="332" font-family="{FONT}" font-size="40" font-weight="400" fill="{SG}">Verified state machines</text>'
+          f'\n  <text x="{tx+2}" y="384" font-family="{FONT}" font-size="40" font-weight="400" fill="{SG}">for humans and AI agents</text>'
           f'\n  <text x="{tx+4}" y="452" font-family="{FONT}" font-size="30" font-weight="600" fill="{AF}">decide · evolve · replay · verify</text>',
           bg="#11181f")
 
@@ -115,7 +127,10 @@ def render():
         print("resvg not found (cargo install resvg) — wrote SVGs only")
         return
     jobs = [("logo.svg", "logo.png", 512), ("logo.svg", "favicon-32.png", 32),
-            ("wordmark.svg", "wordmark.png", 760), ("social-preview.svg", "social-preview.png", 1280)]
+            ("wordmark.svg", "wordmark.png", 760),
+            ("wordmark-light.svg", "wordmark-light.png", 760),
+            ("wordmark-dark.svg", "wordmark-dark.png", 760),
+            ("social-preview.svg", "social-preview.png", 1280)]
     for src, out, w in jobs:
         subprocess.run([resvg, "--width", str(w), os.path.join(ROOT, src), os.path.join(ROOT, out)], check=True)
     print("wrote SVGs + PNGs")

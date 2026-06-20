@@ -73,6 +73,19 @@ match article.apply(some_event) {
 }
 ```
 
+### Watching transitions
+
+Sometimes you want to *react* to a move — log it, bump a metric, wake another part of the system — without tangling that up with the rules. A machine takes listeners for exactly this: `on_transition` fires after every accepted move, `on_rejection` after every rejected one. They only observe; they can't veto a move or change where it lands, which stays the transition function's job alone.
+
+```rust,ignore
+let mut article = Machine::<Article>::new();
+article.on_transition(|record| {
+    println!("{:?} -> {:?}", record.from_state, record.to_state);
+});
+```
+
+Listeners are the core tier's one concession to side effects. Aggregates (section 6) have no listener API at all — their only output is the events they journal — and that line is drawn on purpose.
+
 ## 3. Verifying it: the definition is the test
 
 You wrote the machine; now check it, from the same definition.
@@ -86,21 +99,35 @@ ironstate::analyze!(Article);
 
 `test!` generates thousands of random event sequences and checks, after every step, that your rules hold and nothing panicked. If you declare invariants — properties that must always be true — it checks those too. When something breaks, it shrinks to the shortest failing sequence and is reproducible with a seed.
 
+Invariants do their sharpest work on something the structure can't state on its own: a condition on the *data* a state carries. `Article`'s states are plain, so picture instead a cart that tracks its item count, capped at fifty.
+
 ```rust,ignore
-impl Invariants for Article {
+#[derive(StateMachine, Clone, Debug, PartialEq)]
+#[state_machine(initial = Empty, terminal = [CheckedOut])]
+enum Cart {
+    Empty,
+    Shopping { items: u32 }, // carries the running count
+    CheckedOut,
+}
+// `Add` puts an item in and refuses to go past the cap; `Checkout` seals the
+// cart. (Its transition function is the same shape as Article's.)
+
+impl Invariants for Cart {
     fn invariants() -> Vec<Invariant<Self, Self::Event>> {
-        vec![Invariant::custom("an archived article stays archived")
-            .assert(|before, _event, after| {
-                before != &Article::Archived || after.is_none()
+        // The state graph says nothing about `items`; this does.
+        vec![Invariant::custom("a cart never holds more than 50 items")
+            .assert(|_before, _event, after| match after {
+                Some(Cart::Shopping { items }) => *items <= 50,
+                _ => true,
             })]
     }
 }
 
 #[cfg(test)]
-ironstate::test!(Article, cases = 1000, seed = 0xC0FFEE);
+ironstate::test!(Cart, cases = 1000, seed = 0xC0FFEE);
 ```
 
-Every claim these print is labeled `[proven]` (holds by construction) or `[sampled]` (observed over generated input), so you always know how strong a statement is.
+In that closure `after` is `Some(state)` when the move committed and `None` when it was rejected, so the property can speak to either. Every claim these print is labeled `[proven]` (holds by construction) or `[sampled]` (observed over generated input), so you always know how strong a statement is.
 
 ## 4. Event kinds: gating who can do what
 
@@ -139,6 +166,8 @@ impl MigrateFrom<DocV2> for Doc   { /* … */ }
 
 let doc = Machine::<Doc>::restore_versioned(&bytes)?;
 ```
+
+The same `version`/`history` grammar works on an aggregate's *event* enum (`#[derive(Versioned)]`), so a journal that spans schema changes upcasts each stored event to today's shape as it loads — the events the next two sections record are exactly what gets migrated.
 
 ## 6. Aggregates: when one event isn't one hop
 
@@ -200,6 +229,12 @@ let (account, entropy) = resume(&journal, &seed)?;
 
 The one subtlety: replaying events draws no randomness (only `decide` does), so the stream position can't be recomputed from the events — the journal records it with every append. Get this wrong in a storage adapter and replays drift; `journal_contract_test!` exists to catch exactly that, and any adapter you write is measured against it.
 
+Replaying from the very first event gets slow as the log grows, so the journal also keeps **snapshots**: a periodic copy of the rebuilt state. `resume` starts from the latest snapshot and replays only the events recorded after it, not the whole history.
+
+### Reacting across aggregates: subscriptions
+
+One aggregate often has to act on what another did — a payment is recorded, so the order it belongs to should ship. A **subscription** reads one aggregate's event stream and turns each event into commands for another, the event-sourced form of a process manager. Delivery is idempotent: every event carries a `(StreamId, Seq)` position and the subscription remembers how far it has read, so a redelivery after a crash is recognized and skipped rather than acted on twice. One subscription can follow several source streams at once — it keeps a separate high-water mark per `StreamId`, so they advance independently. The [`hidden-info`](../app/crates/examples/hidden-info) example includes a subscription onto a second aggregate.
+
 ## 8. Hidden information
 
 In a card game, each player sees their own hand but only the *size* of everyone else's. ironstate makes that a property of the type system, not a runtime check you might forget.
@@ -216,6 +251,8 @@ struct Match {
 
 let what_alice_sees = game.view_for(&alice);
 ```
+
+`#[hidden]` has two siblings for other shapes of secret. `#[hidden(conceal)]` shows *everyone* only the residue — even the owner never sees the raw value through a view — for a face-down deck no one may read. `#[hidden(from = all)]` drops a field from every view, owner included: use it for trusted-side data, like an audit digest, that no client should ever receive.
 
 The [`hidden-info`](../app/crates/examples/hidden-info) example is a full match with hands, a per-owner secret, a shared deck, and a subscription to a second aggregate.
 

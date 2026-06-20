@@ -147,6 +147,20 @@ impl<A: AggregateRules> std::error::Error for InitError<A> {}
 
 /// A running aggregate: the state plus the structural enforcement its phase
 /// machine defines.
+///
+/// `new` and `handle` are the in-memory loop for tests and trusted feeds; a
+/// server that persists events drives the same `decide`/`evolve` split through
+/// the journal's `execute` instead.
+///
+/// # Examples
+///
+/// ```ignore
+/// let mut account = Aggregate::new(Account::open())?;
+/// // `handle` runs the structural checks, then `decide`, then `evolve`s each
+/// // emitted event; the events it returns are the facts that were applied.
+/// let events = account.handle(&Command::Deposit { cents: 500 }, &mut ctx)?;
+/// assert_eq!(account.state().balance_cents, 500);
+/// ```
 pub struct Aggregate<A: AggregateRules> {
     state: A,
 }
@@ -196,6 +210,12 @@ impl<A: AggregateRules> Aggregate<A> {
     /// `decide` runs; on a domain rejection nothing is mutated. This is the
     /// in-memory loop for tests and trusted feeds; the persistent server loop
     /// (`execute`) appends to a journal between deciding and evolving.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Rejection::TerminalPhase`] or [`Rejection::CommandKindRejected`]
+    /// from the structural checks, or [`Rejection::Domain`] wrapping the error
+    /// your `decide` returned. In every case the aggregate is left untouched.
     pub fn handle(
         &mut self,
         cmd: &A::Command,

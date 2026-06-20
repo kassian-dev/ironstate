@@ -83,6 +83,35 @@ pub trait StateMachine: TransitionRules + Clone + fmt::Debug + PartialEq + Sized
 /// `#[derive(StateMachine)]` before ever calling the transition function:
 /// terminal states reject everything, and a restricted state rejects events
 /// whose kind it does not accept. Both checks cost a single branch.
+///
+/// # Examples
+///
+/// ```rust,no_run
+/// use ironstate::prelude::*;
+///
+/// #[derive(StateMachine, Clone, Debug, PartialEq)]
+/// #[state_machine(initial = Draft, terminal = [Published])]
+/// enum Article { Draft, Review, Published }
+///
+/// #[derive(Event, Clone, Debug, PartialEq)]
+/// enum Edit { Submit, Approve }
+///
+/// impl TransitionRules for Article {
+///     type Event = Edit;
+///     fn transition(&self, edit: &Edit) -> Option<Self> {
+///         match (self, edit) {
+///             (Article::Draft, Edit::Submit) => Some(Article::Review),
+///             (Article::Review, Edit::Approve) => Some(Article::Published),
+///             _ => None,
+///         }
+///     }
+/// }
+///
+/// let mut article = Machine::<Article>::new();
+/// article.apply(Edit::Submit).unwrap();   // Draft -> Review
+/// article.apply(Edit::Approve).unwrap();  // Review -> Published
+/// assert_eq!(article.state(), &Article::Published);
+/// ```
 pub struct Machine<S: StateMachine>
 where
     S::Event: EventKind,
@@ -138,6 +167,14 @@ where
     ///
     /// On success the new state is returned. On rejection the event moves into
     /// the returned error, so a caller can recover it without a clone.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`TransitionError::TerminalState`] if the current state is
+    /// terminal, [`TransitionError::EventKindRejected`] if the state restricts
+    /// the event's kind, and [`TransitionError::NoTransition`] if the transition
+    /// function declines the event. The structural checks run first, so a
+    /// terminal or restricted state is rejected before any of your logic runs.
     pub fn apply(&mut self, event: S::Event) -> Result<S, TransitionError<S, S::Event>> {
         if self.state.is_terminal() {
             let err = TransitionError::TerminalState {
@@ -190,6 +227,16 @@ where
 
     /// Whether `apply(event)` would succeed — the cheapest of the three probes,
     /// allocating nothing and firing no listeners.
+    ///
+    /// Pair it with `event_variants()` to show only the moves that are legal
+    /// right now:
+    ///
+    /// ```ignore
+    /// let legal: Vec<Edit> = Edit::event_variants()
+    ///     .into_iter()
+    ///     .filter(|edit| article.could_apply(edit))
+    ///     .collect();
+    /// ```
     pub fn could_apply(&self, event: &S::Event) -> bool {
         if self.state.is_terminal() {
             return false;

@@ -38,8 +38,8 @@ records are files in the repo, not chat history.
   it helps the adopter on docs.rs; follow the rustdoc conventions
   (`# Examples` / `# Panics` / `# Errors`, intra-doc links over bare names).
   Adopter DX is first-class. The gate enforces the machine-checkable parts:
-  `#![warn(missing_docs)]` in every crate (under `-D warnings`) so nothing public
-  ships undocumented, the `cargo test` doctests so every example that exists
+  `#![warn(missing_docs)]` in every published crate (under `-D warnings`) so
+  nothing public ships undocumented, the `cargo test` doctests so every example that exists
   compiles and runs, and the `-D warnings` rustdoc build so links resolve.
   *Whether* an item that would help the adopter carries an example is a review
   call, not a lint.

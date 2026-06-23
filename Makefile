@@ -69,6 +69,7 @@ wasm: ## Build the determinism-sensitive crates for wasm32 (cross-target check)
 	# pulls getrandom, which needs a wasm backend we deliberately avoid here.
 	$(CARGO_DIR) $(CARGO) build -p ironstate --target $(WASM_TARGET) --no-default-features --features derive
 	$(CARGO_DIR) $(CARGO) build -p ironstate-aggregate --target $(WASM_TARGET) --no-default-features --features audit
+	$(CARGO_DIR) $(CARGO) build -p ironstate-journal --target $(WASM_TARGET) --no-default-features --features memory
 
 .PHONY: deny
 deny: ## Supply-chain gate: licenses, advisories, duplicate majors

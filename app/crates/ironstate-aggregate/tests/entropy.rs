@@ -69,6 +69,12 @@ enum Defect {
     ProbeDrift,
     /// `shuffle_len` returns a non-permutation.
     BadShuffle,
+    /// `draw_below` is off by one at the boundary: `<=` makes `draw_below(0, d)`
+    /// occasionally true.
+    BadBelow,
+    /// `shuffle_len`'s Fisher–Yates loop starts one too low, so it draws for
+    /// `len == 1` instead of issuing zero draws.
+    DrawingShuffle,
 }
 
 struct Planted {
@@ -125,12 +131,26 @@ impl EntropySource for Planted {
             }
         }
     }
+    fn draw_below(&mut self, num: u64, den: u64) -> bool {
+        if matches!(self.defect, Defect::BadBelow) {
+            return self.draw_range(0..den) <= num; // off-by-one: draw_below(0, d) can be true
+        }
+        self.draw_range(0..den) < num
+    }
     fn shuffle_len(&mut self, len: usize) -> Vec<usize> {
         if matches!(self.defect, Defect::BadShuffle) {
             return vec![0; len]; // not a permutation
         }
+        // Fisher–Yates stops before index 0; DrawingShuffle starts one too low, so
+        // it issues a (no-op) draw for the last element — a real permutation, but
+        // shuffle_len(1) is no longer draw-free.
+        let lo = if matches!(self.defect, Defect::DrawingShuffle) {
+            0
+        } else {
+            1
+        };
         let mut indices: Vec<usize> = (0..len).collect();
-        for i in (1..len).rev() {
+        for i in (lo..len).rev() {
             let j = self.draw_range(0..(i as u64 + 1)) as usize;
             indices.swap(i, j);
         }
@@ -165,4 +185,16 @@ fn contract_catches_a_drifting_probe() {
 #[should_panic(expected = "permutation")]
 fn contract_catches_a_non_permutation_shuffle() {
     assert_entropy_contract(|| Planted::new(Defect::BadShuffle));
+}
+
+#[test]
+#[should_panic(expected = "draw_below(0, 10) must never be true")]
+fn contract_catches_an_off_by_one_draw_below() {
+    assert_entropy_contract(|| Planted::new(Defect::BadBelow));
+}
+
+#[test]
+#[should_panic(expected = "shuffle_len(1) must draw nothing")]
+fn contract_catches_a_drawing_shuffle_len() {
+    assert_entropy_contract(|| Planted::new(Defect::DrawingShuffle));
 }

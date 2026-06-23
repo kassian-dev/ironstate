@@ -124,5 +124,5 @@ jobs:
 
   # The planted-defect fixtures and the conformance/scenario suites already run
   # in `test`, and `determinism` diffs the seeded state digests across targets.
-  # Fuzzing and mutation testing run in `quality.yml` (fuzz blocks on a crash;
-  # mutants is advisory).
+  # Fuzzing runs in `fuzz.yml` (blocks on a crash); mutation testing in
+  # `mutants.yml` (manual, advisory).

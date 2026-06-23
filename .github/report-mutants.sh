@@ -50,6 +50,13 @@ $footer"
 
 printf '%s\n' "$body" >> "${GITHUB_STEP_SUMMARY:-/dev/stdout}"
 
+# A sticky PR comment only applies to a pull_request run; a manual
+# (workflow_dispatch) run reports through the step summary above.
+if [[ "${GITHUB_REF:-}" != refs/pull/* ]]; then
+  echo "manual run (no PR) — results are in the step summary"
+  exit 0
+fi
+
 repo="$GITHUB_REPOSITORY"
 pr=$(printf '%s' "$GITHUB_REF" | cut -d/ -f3)
 cid=$(gh api "repos/$repo/issues/$pr/comments" \

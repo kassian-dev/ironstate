@@ -22,6 +22,63 @@
 //! the events — it is recorded **with every append, atomically**. A
 //! [`MemoryJournal`] is included as the reference implementation and the yardstick
 //! every storage adapter is measured against with [`journal_contract_test!`].
+//!
+//! # Example: append a command, then replay the log
+//!
+//! ```
+//! use ironstate_journal::{execute, replay, Journal, MemoryJournal, Seq, Snapshot};
+//! # use ironstate::prelude::*;
+//! # use ironstate_aggregate::*;
+//! #
+//! # // A tiny aggregate (a tally you can add to) — see the ironstate-aggregate docs.
+//! # #[derive(StateMachine, Clone, Debug, PartialEq)]
+//! # #[state_machine(initial = Open, terminal = [Closed])]
+//! # enum Phase { Open, Closed }
+//! # #[derive(Event, Clone, Debug, PartialEq)] enum Step { Close }
+//! # impl TransitionRules for Phase {
+//! #     type Event = Step;
+//! #     fn transition(&self, _: &Step) -> Option<Phase> { matches!(self, Phase::Open).then_some(Phase::Closed) }
+//! # }
+//! # #[derive(Event, Clone, Debug, PartialEq)] enum Command { Add(u32), Close }
+//! # #[derive(Clone, Debug, PartialEq)] enum Change { Added(u32), Closed }
+//! # #[derive(Debug)] struct ClosedError;
+//! # impl std::fmt::Display for ClosedError {
+//! #     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { write!(f, "the counter is closed") }
+//! # }
+//! # impl std::error::Error for ClosedError {}
+//! # #[derive(Clone, Debug, PartialEq)] struct Counter { phase: Phase, total: u32 }
+//! # impl AggregateRules for Counter {
+//! #     type Phase = Phase; type Command = Command; type Event = Change; type Error = ClosedError;
+//! #     type Ctx = OwnedDeterministicCtx<u32>;
+//! #     fn phase(&self) -> Phase { self.phase.clone() }
+//! #     fn decide(&self, cmd: &Command, _ctx: &mut Self::Ctx) -> Result<Vec<Change>, ClosedError> {
+//! #         if self.phase == Phase::Closed { return Err(ClosedError); }
+//! #         Ok(match cmd { Command::Add(n) => vec![Change::Added(*n)], Command::Close => vec![Change::Closed] })
+//! #     }
+//! #     fn evolve(&mut self, change: &Change) {
+//! #         match change { Change::Added(n) => self.total += *n, Change::Closed => self.phase = Phase::Closed }
+//! #     }
+//! # }
+//!
+//! let genesis = Counter { phase: Phase::Open, total: 0 };
+//! let mut journal = MemoryJournal::new(genesis.clone());
+//! let mut counter = Aggregate::new(genesis.clone()).unwrap();
+//! let mut ctx = OwnedDeterministicCtx {
+//!     entropy: Box::new(SeededEntropy::from_seed(&Seed([0; 32]))),
+//!     actor: 1,
+//!     now: LogicalTime(0),
+//! };
+//!
+//! // The everyday loop: validate, append the events (with the entropy position,
+//! // atomically), then apply them — so the log and the live state never disagree.
+//! execute(&mut journal, &mut counter, &Command::Add(7), &mut ctx).unwrap();
+//! assert_eq!(counter.state().total, 7);
+//!
+//! // Replaying the log from genesis reproduces the state — the journal's whole point.
+//! let events = journal.events_since(None).unwrap();
+//! let base = Snapshot { state: genesis, schema_version: 0, at: Seq(0), entropy_pos: DrawPos(0) };
+//! assert_eq!(replay(base, &events).unwrap().state().total, 7);
+//! ```
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 

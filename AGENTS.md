@@ -33,6 +33,16 @@ records are files in the repo, not chat history.
   function. Enforced by the error-path tests and `cargo-fuzz` on decode paths.
 - **Teaching errors.** Every `Display`, every derive diagnostic: what happened,
   why, what to do. Enforced by error-message snapshot tests and `trybuild`.
+- **Docs teach, with runnable examples.** Every public item carries rustdoc —
+  what and why — plus a runnable example (a doctest, so it cannot rot) wherever
+  it helps the adopter on docs.rs; follow the rustdoc conventions
+  (`# Examples` / `# Panics` / `# Errors`, intra-doc links over bare names).
+  Adopter DX is first-class. The gate enforces the machine-checkable parts:
+  `#![warn(missing_docs)]` in every published crate (under `-D warnings`) so
+  nothing public ships undocumented, the `cargo test` doctests so every example that exists
+  compiles and runs, and the `-D warnings` rustdoc build so links resolve.
+  *Whether* an item that would help the adopter carries an example is a review
+  call, not a lint.
 - **Determinism is conditional and the conditions are executable.** Same
   `(seed, journal)` ⇒ identical `Digest128` across targets. Enforced by
   the `StableHash` derive's compile errors (floats / hash maps / wall clocks in

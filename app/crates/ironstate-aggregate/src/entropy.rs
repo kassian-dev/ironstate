@@ -208,3 +208,190 @@ impl<Actor> CtxEntropy for OwnedDeterministicCtx<Actor> {
         Some(&mut *self.entropy)
     }
 }
+
+/// Assert that a custom [`EntropySource`] obeys the determinism contract.
+///
+/// **Why this exists.** The family's promise — same seed, same outcome, on every
+/// machine — only holds if every entropy source draws values the same way. Most
+/// sources inherit that for free from the default `draw_range` / `draw_below` /
+/// `shuffle_len`. But the trait lets you *override* those — to keep a stream your
+/// golden vectors are already pinned to, or to wrap a different generator — and
+/// nothing in an ordinary test suite re-checks that an override stays
+/// well-behaved: an in-range, unbiased draw; a real permutation; a seek that
+/// lands you exactly back. This runs those checks in one call, the same way
+/// [`journal_contract_test!`](crate) proves a custom journal adapter conforms.
+///
+/// It checks *properties*, not specific values, so it passes for any correct
+/// algorithm — the default bit-mask scheme or your own modulo/rejection one. It
+/// deliberately does **not** pin your stream's exact bytes; keep a separate
+/// golden-vector test (a frozen `draw_u64` sequence) for that, since those values
+/// are yours, not the contract's.
+///
+/// `fresh` must return a brand-new source at the start of the *same* seed on
+/// every call — the checks reconstruct and seek it.
+///
+/// # What it proves
+/// - **same seed, same stream** — two fresh sources agree word-for-word;
+/// - **O(1) seek round-trips** — draw to a position, seek a fresh source there,
+///   and the next value matches (the replay/rewind contract);
+/// - **`probe` is pure** — it leaves the parent's position untouched and forks
+///   from exactly that position;
+/// - **`draw_range(a..b)` stays in `[a, b)`**, and a unit range `x..x+1` is the
+///   constant `x`;
+/// - **`draw_below(0, d)` is never true; `draw_below(d, d)` always is**;
+/// - **`shuffle_len(n)` is a permutation of `0..n`**, agrees with `shuffle` over
+///   the identity, and `shuffle_len(1)` draws nothing.
+///
+/// # Examples
+/// ```
+/// use ironstate_aggregate::{DrawPos, EntropySource, assert_entropy_contract};
+///
+/// // A tiny counter-addressable source (splitmix64 at a position) that overrides
+/// // `draw_range` with modulo-zone rejection instead of the default bit-mask —
+/// // exactly the kind of override worth contract-checking.
+/// struct Splitmix {
+///     seed: u64,
+///     pos: u64,
+/// }
+///
+/// impl EntropySource for Splitmix {
+///     fn draw_u64(&mut self) -> u64 {
+///         self.pos += 1;
+///         let mut z = self.seed.wrapping_add(self.pos.wrapping_mul(0x9E37_79B9_7F4A_7C15));
+///         z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+///         z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+///         z ^ (z >> 31)
+///     }
+///     fn seek(&mut self, pos: DrawPos) {
+///         self.pos = pos.0;
+///     }
+///     fn draws(&self) -> DrawPos {
+///         DrawPos(self.pos)
+///     }
+///     fn probe(&self) -> Box<dyn EntropySource> {
+///         Box::new(Splitmix { seed: self.seed, pos: self.pos })
+///     }
+///     // Modulo-zone rejection: unbiased, but a different stream from the default.
+///     fn draw_range(&mut self, range: core::ops::Range<u64>) -> u64 {
+///         let n = range.end - range.start;
+///         let zone = u64::MAX - (u64::MAX % n);
+///         loop {
+///             let v = self.draw_u64();
+///             if v < zone {
+///                 return range.start + v % n;
+///             }
+///         }
+///     }
+/// }
+///
+/// // One call verifies the override is still unbiased, in-range, seekable, and
+/// // forkable. It panics with a teaching message if any property breaks.
+/// assert_entropy_contract(|| Splitmix { seed: 7, pos: 0 });
+/// ```
+///
+/// # Panics
+/// On the first property that fails, with a message naming the property and the
+/// offending values — so a broken source points straight at the fix.
+pub fn assert_entropy_contract<E: EntropySource>(fresh: impl Fn() -> E) {
+    // Same seed, same stream.
+    let (mut a, mut b) = (fresh(), fresh());
+    for word in 0..32 {
+        let (x, y) = (a.draw_u64(), b.draw_u64());
+        assert_eq!(
+            x, y,
+            "same seed must give the same stream, but word {word} differed: \
+             {x:#018x} != {y:#018x}",
+        );
+    }
+
+    // O(1) seek round-trips: a fresh source seeked to a position resumes the stream.
+    let mut original = fresh();
+    for _ in 0..5 {
+        original.draw_u64();
+    }
+    let pos = original.draws();
+    let next = original.draw_u64();
+    let mut seeked = fresh();
+    seeked.seek(pos);
+    assert_eq!(
+        seeked.draw_u64(),
+        next,
+        "seek must reconstruct the stream: a fresh source seeked to {pos:?} drew a \
+         different next value than the original",
+    );
+
+    // probe is pure: it does not advance the parent, and forks from exactly here.
+    let mut parent = fresh();
+    parent.draw_u64();
+    let forked_at = parent.draws();
+    let mut probe = parent.probe();
+    let probed = [probe.draw_u64(), probe.draw_u64()];
+    assert_eq!(
+        parent.draws(),
+        forked_at,
+        "probe must not advance the parent (it is an uncounted fork)",
+    );
+    let mut rebuilt = fresh();
+    rebuilt.seek(forked_at);
+    assert_eq!(
+        [rebuilt.draw_u64(), rebuilt.draw_u64()],
+        probed,
+        "probe must fork from the parent's current position {forked_at:?}",
+    );
+
+    // draw_range stays in bounds; a unit range is constant.
+    let mut e = fresh();
+    for _ in 0..1000 {
+        let v = e.draw_range(10..20);
+        assert!(
+            (10..20).contains(&v),
+            "draw_range(10..20) must stay in [10, 20), drew {v}",
+        );
+    }
+    let mut e = fresh();
+    for _ in 0..8 {
+        let v = e.draw_range(5..6);
+        assert_eq!(v, 5, "draw_range(5..6) must be the constant 5, drew {v}");
+    }
+
+    // draw_below boundaries: 0/den is never true, den/den always is.
+    let mut e = fresh();
+    for _ in 0..100 {
+        assert!(!e.draw_below(0, 10), "draw_below(0, 10) must never be true");
+    }
+    let mut e = fresh();
+    for _ in 0..100 {
+        assert!(
+            e.draw_below(10, 10),
+            "draw_below(10, 10) must always be true"
+        );
+    }
+
+    // shuffle_len is a permutation, agrees with shuffle, and shuffle_len(1) draws nothing.
+    let mut e = fresh();
+    let perm = e.shuffle_len(8);
+    let mut sorted = perm.clone();
+    sorted.sort_unstable();
+    assert_eq!(
+        sorted,
+        (0..8).collect::<Vec<_>>(),
+        "shuffle_len(8) must be a permutation of 0..8, got {perm:?}",
+    );
+    let mut e = fresh();
+    let via_len = e.shuffle_len(10);
+    let mut identity: Vec<usize> = (0..10).collect();
+    let mut e = fresh();
+    e.shuffle(&mut identity);
+    assert_eq!(
+        via_len, identity,
+        "shuffle_len and shuffle must issue the same permutation",
+    );
+    let mut e = fresh();
+    let start = e.draws();
+    let _ = e.shuffle_len(1);
+    assert_eq!(
+        e.draws(),
+        start,
+        "shuffle_len(1) must draw nothing, but the position advanced",
+    );
+}

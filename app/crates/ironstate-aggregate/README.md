@@ -112,6 +112,22 @@ ironstate_aggregate::determinism_test!(MatchState);            // two seeded run
 ironstate_aggregate::leak_test!(MatchState, excluding = [PlayCard]); // no covert hidden→view flow
 ```
 
+## A custom entropy source
+
+Most consumers use the provided `SeededEntropy`. If you implement your own
+`EntropySource` — to wrap a different generator, or to keep a stream your golden
+vectors are already pinned to — verify it against the determinism contract in one
+call:
+
+```rust,ignore
+ironstate_aggregate::assert_entropy_contract(|| MySource::from_seed(&seed));
+```
+
+It proves the unbiased-draw, O(1)-seek, and pure-probe properties the family's
+replay guarantee rests on. Keep a separate golden-vector test to pin your
+stream's exact bytes — the contract holds for any correct algorithm, not just
+yours.
+
 ## Features
 
 | Feature | Adds |

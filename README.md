@@ -102,8 +102,8 @@ let mut m = Machine::<Article>::new();          // starts in Draft
 assert_eq!(m.apply(Edit::Submit).unwrap(), Article::Review);
 
 // Three ways to look before you leap, cheapest first:
-assert!(m.could_apply(&Edit::Approve));         // bool
-assert!(m.why_not(&Edit::Submit).is_some());    // the exact typed rejection, or None
+assert!(m.could_apply(&Edit::Approve));                                  // bool
+assert!(m.why_not(&Edit::Submit).is_some());                             // the exact typed rejection, or None
 assert_eq!(m.peek_transition(&Edit::Approve), Some(Article::Published)); // the target
 
 // On rejection the event moves into the error, so you get it back without a clone:
@@ -145,9 +145,9 @@ declared invariants hold and nothing panicked. On a violation, proptest shrinks
 to the minimal failing sequence. Runs are reproducible with a `seed`.
 
 ```rust,ignore
-ironstate::test!(Article);                            // defaults: 500 cases
+ironstate::test!(Article);                               // defaults: 500 cases
 ironstate::test!(Article, cases = 1000, max_steps = 50);
-ironstate::test!(Article, seed = 0xDEC0DE);           // reproducible
+ironstate::test!(Article, seed = 0xDEC0DE);              // reproducible
 ```
 
 Invariants are optional and declared via the `Invariants` trait; `test!` runs

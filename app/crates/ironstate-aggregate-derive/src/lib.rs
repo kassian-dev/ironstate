@@ -11,6 +11,7 @@
 //! - `#[derive(Redact)]` generates a per-viewer view type and its `view_for`.
 //! - `#[derive(Versioned)]` generates versioned restore over a `MigrateFrom`
 //!   chain (the `AggregateRules` trait itself is written by hand).
+#![warn(missing_docs)]
 
 use proc_macro::TokenStream;
 use syn::{DeriveInput, parse_macro_input};

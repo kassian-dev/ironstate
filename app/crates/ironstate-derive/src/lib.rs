@@ -9,6 +9,7 @@
 //!   restrictions, and (with `version`/`history`) versioned restore.
 //! - `#[derive(Event)]` reads `#[event_kind]` and `#[likelihood]` and generates
 //!   the event metadata the runtime and verification macros consume.
+#![warn(missing_docs)]
 
 use proc_macro::TokenStream;
 use syn::{DeriveInput, parse_macro_input};

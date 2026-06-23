@@ -119,7 +119,7 @@ mod testkit;
 
 pub use entropy::{
     CtxEntropy, DeterministicCtx, DrawPos, EntropySource, EntropySourceExt, LogicalTime,
-    OwnedDeterministicCtx, Seed, SeededEntropy,
+    OwnedDeterministicCtx, Seed, SeededEntropy, assert_entropy_contract,
 };
 pub use rules::{Aggregate, AggregateRules, InitError, Rejection};
 

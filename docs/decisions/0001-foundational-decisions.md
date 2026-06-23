@@ -104,14 +104,15 @@ into the corpus (and uploaded) so libFuzzer replays it every run and re-fails
 until fixed — a known crash can't silently flip green on a later push; the
 lasting gate is a regression test built from the reproducer. Fuzzing needs a
 nightly toolchain, isolated to that one CI job — the crates themselves stay on stable. Mutation testing
-(`cargo-mutants --in-diff`) runs on the changed lines and is advisory: it posts
-surviving mutants to a sticky PR comment but never fails the build, because
-equivalent mutants would otherwise block unrelated work. The comment updates in
-place — it never deletes (delete/recreate would flicker under the run-to-run
-non-determinism), and a generous per-mutant timeout keeps results deterministic
-so it does not falsely flip to "clean". Both live in `quality.yml`, kept separate
-from `ci.yml` so the elevated `pull-requests` permission stays scoped to it.
-Blocking on mutants can be revisited once the equivalent-mutant excludes settle.
+(`cargo-mutants --in-diff`) runs on the changed lines and is advisory: it
+reports surviving mutants to the run summary but never fails the build, because
+equivalent mutants would otherwise block unrelated work. A generous per-mutant
+timeout keeps results reproducible (a survivor drops off only when the code or
+tests change, not from build timing). It is manual (`workflow_dispatch` in
+`mutants.yml`) — on most PRs there is little to mutate, so a per-PR run produced
+no signal; trigger it when changing core logic. Fuzzing lives in its own per-PR
+workflow (`fuzz.yml`); both are kept out of `ci.yml`. Blocking on mutants can be
+revisited once the equivalent-mutant excludes settle.
 
 ## F-12 — Cross-target determinism is verified x86_64 vs aarch64; wasm32 is build-only
 

@@ -40,3 +40,12 @@ violate any of these is a security issue — not only classic memory unsafety:
 
 Behavior that is merely incorrect, with no safety, determinism, or
 confidentiality impact, should be filed as a normal public issue instead.
+
+### Not in scope
+
+- **In-memory secret hygiene.** The family does not zeroize the seed in memory:
+  `Seed` / `SeededEntropy` hold the raw bytes, and the stream generator expands
+  them into its own internal state. `Debug` is redacted, so the seed cannot leak
+  into a log or a panic — but if your threat model includes memory disclosure
+  (a core dump, swap, a compromised process), hold the seed in a secrets manager
+  or a zeroizing allocator. Seed storage is the application's concern.

@@ -1,0 +1,61 @@
+name: Mutants
+
+# Mutation-test the changed Rust with cargo-mutants --in-diff: advisory, it
+# reports surviving mutants in a sticky PR comment but never blocks.
+#
+# Scoped to pull requests that touch library source — on a docs/deps/test-only
+# PR there is nothing to mutate, so running there only burned CI. A manual
+# workflow_dispatch run is available for an on-demand check against any base.
+on:
+  pull_request:
+    paths:
+      - "app/crates/**/src/**.rs"
+  workflow_dispatch:
+    inputs:
+      base:
+        description: "Branch to diff against for --in-diff"
+        required: false
+        default: main
+
+permissions:
+  contents: read
+  pull-requests: write # sticky PR comment
+
+jobs:
+  mutants:
+    name: mutants (advisory)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0 # need history to diff against the base
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          workspaces: app
+      - uses: taiki-e/install-action@8b3c737da4b541bf0fb5a3e0488ff20535badac9 # v2
+        with:
+          tool: cargo-mutants
+      - name: Diff of changed Rust (paths relative to app/)
+        id: diff
+        # On a pull request, diff against its base; on a manual run, against the
+        # chosen branch (default main).
+        run: |
+          base='${{ github.event.pull_request.base.sha || format('origin/{0}', inputs.base) }}'
+          git diff --relative=app "$base"...HEAD -- '*.rs' > "$RUNNER_TEMP/changed.diff" || true
+          echo "lines=$(wc -l < "$RUNNER_TEMP/changed.diff" | tr -d ' ')" >> "$GITHUB_OUTPUT"
+      - name: Mutation-test the diff
+        if: steps.diff.outputs.lines != '0'
+        continue-on-error: true # advisory: surviving mutants must not fail the build
+        timeout-minutes: 15 # bound the run; a huge diff reports partial results
+        # Generous per-mutant timeout: the seeded suite runs in seconds, so a
+        # finite mutant finishes well under this — only a true hang times out.
+        # This keeps results deterministic (a survivor drops off only when the
+        # code/tests actually changed, not from timing), so the comment doesn't
+        # falsely flip to "clean".
+        run: make mutants MUTANTS_ARGS="--in-diff $RUNNER_TEMP/changed.diff --timeout 120"
+      - name: Report surviving mutants
+        if: steps.diff.outputs.lines != '0'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: bash .github/report-mutants.sh

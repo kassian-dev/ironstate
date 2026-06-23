@@ -1,19 +1,18 @@
 name: Quality
 
-# Deeper, time-boxed checks on every pull request:
-#  - fuzz the versioned-restore decode path (the one place untrusted bytes enter);
-#    a crash is a real, reproducible bug, so this job blocks and uploads the
-#    crashing input.
-#  - mutation-test the changed Rust with cargo-mutants `--in-diff`; advisory only,
-#    it reports surviving mutants in a sticky PR comment but never blocks.
-# Jobs invoke the same `make` targets a developer runs locally.
+# A deeper, time-boxed check on every pull request: fuzz the versioned-restore
+# decode path (the one place untrusted bytes enter). A crash is a real,
+# reproducible bug, so this job blocks and uploads the crashing input.
+#
+# Mutation testing moved to mutants.yml — scoped to PRs that touch library
+# source (where it has signal) plus manual runs, so it no longer taxes every PR.
+# This job invokes the same `make` target a developer runs locally.
 
 on:
   pull_request:
 
 permissions:
   contents: read
-  pull-requests: write # mutants: sticky PR comment
 
 jobs:
   fuzz:
@@ -66,39 +65,3 @@ jobs:
         with:
           path: app/crates/ironstate/fuzz/corpus
           key: fuzz-corpus-${{ github.run_id }}
-
-  mutants:
-    name: mutants (advisory)
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-        with:
-          fetch-depth: 0 # need the PR base commit to diff against
-      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
-      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
-        with:
-          workspaces: app
-      - uses: taiki-e/install-action@8b3c737da4b541bf0fb5a3e0488ff20535badac9 # v2
-        with:
-          tool: cargo-mutants
-      - name: Diff of changed Rust (paths relative to app/)
-        id: diff
-        run: |
-          base='${{ github.event.pull_request.base.sha }}'
-          git diff --relative=app "$base"...HEAD -- '*.rs' > "$RUNNER_TEMP/changed.diff" || true
-          echo "lines=$(wc -l < "$RUNNER_TEMP/changed.diff" | tr -d ' ')" >> "$GITHUB_OUTPUT"
-      - name: Mutation-test the diff
-        if: steps.diff.outputs.lines != '0'
-        continue-on-error: true # advisory: surviving mutants must not fail the build
-        timeout-minutes: 15 # bound the run; a huge diff (e.g. the bootstrap PR) reports partial results
-        # Generous per-mutant timeout: the seeded suite runs in seconds, so a
-        # finite mutant finishes well under this — only a true hang times out.
-        # This keeps results deterministic (a survivor drops off only when the
-        # code/tests actually changed, not from timing), so the comment doesn't
-        # falsely flip to "clean".
-        run: make mutants MUTANTS_ARGS="--in-diff $RUNNER_TEMP/changed.diff --timeout 120"
-      - name: Report surviving mutants
-        if: steps.diff.outputs.lines != '0'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: bash .github/report-mutants.sh

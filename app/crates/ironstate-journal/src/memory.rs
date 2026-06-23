@@ -33,6 +33,10 @@ impl<A: AggregateRules + Clone> MemoryJournal<A> {
     }
 
     fn record_at(&self, at: Seq) -> Result<&Record<A>, JournalError> {
+        // `at` is journal-minted (Seq counts up to records.len()), so this cast
+        // is exact on every supported target. An adapter that deserializes Seq
+        // from storage should validate it before indexing: on a 32-bit target a
+        // hand-crafted out-of-range Seq would truncate here rather than be caught.
         if at.0 == 0 || at.0 as usize > self.records.len() {
             return Err(JournalError::UnknownSeq { at });
         }

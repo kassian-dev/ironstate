@@ -134,6 +134,12 @@ fn is_skip(field: &Field) -> bool {
 
 /// Reject field types that cannot be deterministically hashed, with a teaching
 /// message naming the fix. Recurses through containers so `Vec<f64>` is caught.
+///
+/// This is a *syntactic* check on the type's last path segment, so it is a
+/// teaching aid, not the gate: a type alias (`type Money = f64`) slips past it.
+/// The value still cannot be hashed — there is no `StableHash` impl for the
+/// forbidden types, so an aliased one fails to compile at its `encode` call with
+/// a trait-bound error instead of this message. The type system is the backstop.
 fn check_type(ty: &Type) -> syn::Result<()> {
     match ty {
         Type::Path(type_path) => {

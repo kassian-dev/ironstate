@@ -45,6 +45,10 @@ proc-macro2 = "1"
 serde = { version = "1", features = ["derive"] }
 trybuild = "1"
 
+# Release keeps the default overflow-checks = false on purpose: the only
+# counter-like arithmetic is on monotonic u64s (DrawPos / Seq / schema version)
+# that cannot reach 2^64, so enabling checks would tax the hot path for a case
+# that never fires.
 [profile.test]
 # Speeds up the proptest / scenario corpora enough to keep CI runs in budget.
 opt-level = 1

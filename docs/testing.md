@@ -33,7 +33,7 @@ and compile-fail are CI/maintainer layers — or that every machine gets for fre
 | `determinism_test!` | your aggregate **draws entropy**, or you rely on replay / audit digests / cross-target reproducibility | no entropy and the state is trivially deterministic |
 | `leak_test!` | you have `#[hidden]` fields or per-viewer redaction (hidden-information domains) | nothing is concealed — there's nothing to leak |
 | `journal_contract_test!` | you **implement your own storage adapter** — it proves the seven durability properties | you use `MemoryJournal` or a provided adapter; it's already covered |
-| `assert_entropy_contract` | you **implement your own `EntropySource`**, or override its derived draws — it proves the in-range/covering-draw, seek-reconstruction, and pure-probe contract the determinism guarantee rests on | you use the provided `SeededEntropy` |
+| `assert_entropy_contract()` | you **implement your own `EntropySource`**, or override its derived draws — it proves the in-range/covering-draw, seek-reconstruction, and pure-probe contract the determinism guarantee rests on | you use the provided `SeededEntropy` |
 | `scenario_test!` | durability under faults matters and you want crashes / forks / retries proven invisible to the outcome | an in-memory or non-durable use case |
 
 The two most often misapplied: `journal_contract_test!` is for *adapter authors*,

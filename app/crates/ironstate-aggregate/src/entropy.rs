@@ -387,7 +387,9 @@ pub fn assert_entropy_contract<E: EntropySource>(fresh: impl Fn() -> E) {
     let mut e = fresh();
     let mut seen = [false; 6];
     for _ in 0..200 {
-        seen[e.draw_range(0..6) as usize] = true;
+        let v = e.draw_range(0..6);
+        assert!(v < 6, "draw_range(0..6) must stay in [0, 6), drew {v}");
+        seen[v as usize] = true;
     }
     assert!(
         seen.iter().all(|&hit| hit),

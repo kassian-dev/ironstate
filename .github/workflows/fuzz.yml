@@ -1,12 +1,11 @@
-name: Quality
+name: Fuzz
 
-# A deeper, time-boxed check on every pull request: fuzz the versioned-restore
-# decode path (the one place untrusted bytes enter). A crash is a real,
-# reproducible bug, so this job blocks and uploads the crashing input.
+# Fuzz the versioned-restore decode path on every pull request (the one place
+# untrusted bytes enter). A crash is a real, reproducible bug, so this job blocks
+# and uploads the crashing input. Invokes the same `make` target a developer runs
+# locally.
 #
-# Mutation testing lives in mutants.yml — manual (workflow_dispatch), since on
-# most PRs it has little to mutate and ran for no signal.
-# This job invokes the same `make` target a developer runs locally.
+# Mutation testing is a separate, manual workflow: mutants.yml (workflow_dispatch).
 
 on:
   pull_request:

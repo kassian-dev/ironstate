@@ -5,6 +5,12 @@ based on [Keep a Changelog](https://keepachangelog.com/); from the next release
 on, the entries are maintained by release-plz. This crate is the aggregate tier
 of the [ironstate](https://github.com/kassian-dev/ironstate) family.
 
+## [0.1.4](https://github.com/kassian-dev/ironstate/compare/ironstate-aggregate-v0.1.3...ironstate-aggregate-v0.1.4) - 2026-06-23
+
+### Added
+
+- *(aggregate)* add assert_entropy_contract — a conformance check for custom   EntropySource impls ([#26](https://github.com/kassian-dev/ironstate/pull/26))
+
 ## [0.1.3](https://github.com/kassian-dev/ironstate/compare/ironstate-aggregate-v0.1.2...ironstate-aggregate-v0.1.3) - 2026-06-20
 
 ### Other

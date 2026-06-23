@@ -5,6 +5,13 @@ is based on [Keep a Changelog](https://keepachangelog.com/); from the next relea
 on, the entries are maintained by release-plz. This crate provides the procedural
 macros for [`ironstate-aggregate`](https://github.com/kassian-dev/ironstate).
 
+## [0.1.3](https://github.com/kassian-dev/ironstate/compare/ironstate-aggregate-derive-v0.1.2...ironstate-aggregate-derive-v0.1.3) - 2026-06-23
+
+### Other
+
+- *(agents)* codify the rustdoc + runnable-examples convention ([#29](https://github.com/kassian-dev/ironstate/pull/29))
+- *(quality)* scope mutants to source PRs; document determinism and secret boundaries ([#28](https://github.com/kassian-dev/ironstate/pull/28))
+
 ## [0.1.2](https://github.com/kassian-dev/ironstate/compare/ironstate-aggregate-derive-v0.1.1...ironstate-aggregate-derive-v0.1.2) - 2026-06-20
 
 ### Other

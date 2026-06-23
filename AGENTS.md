@@ -37,9 +37,12 @@ records are files in the repo, not chat history.
   what and why — plus a runnable example (a doctest, so it cannot rot) wherever
   it helps the adopter on docs.rs; follow the rustdoc conventions
   (`# Examples` / `# Panics` / `# Errors`, intra-doc links over bare names).
-  Adopter DX is first-class. Enforced by `#![warn(missing_docs)]` in every crate
-  (promoted to an error by the gate's `-D warnings`), the `-D warnings` rustdoc
-  build, and the doctests in `cargo test`.
+  Adopter DX is first-class. The gate enforces the machine-checkable parts:
+  `#![warn(missing_docs)]` in every crate (under `-D warnings`) so nothing public
+  ships undocumented, the `cargo test` doctests so every example that exists
+  compiles and runs, and the `-D warnings` rustdoc build so links resolve.
+  *Whether* an item that would help the adopter carries an example is a review
+  call, not a lint.
 - **Determinism is conditional and the conditions are executable.** Same
   `(seed, journal)` ⇒ identical `Digest128` across targets. Enforced by
   the `StableHash` derive's compile errors (floats / hash maps / wall clocks in

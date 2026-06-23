@@ -38,10 +38,17 @@ jobs:
         env:
           INPUT_BASE: ${{ inputs.base }}
         run: |
-          base="origin/${INPUT_BASE:-main}"
-          git rev-parse --verify --quiet "$base^{commit}" >/dev/null \
-            || { echo "::error::mutants base ref '$base' not found"; exit 1; }
-          git diff --relative=app "$base"...HEAD -- '*.rs' > "$RUNNER_TEMP/changed.diff"
+          base="${INPUT_BASE:-main}"
+          # Accept a SHA / tag / fully-qualified ref as-is; fall back to a remote
+          # branch (origin/<name>) for a plain branch name.
+          if git rev-parse --verify --quiet "$base^{commit}" >/dev/null; then
+            ref="$base"
+          elif git rev-parse --verify --quiet "origin/$base^{commit}" >/dev/null; then
+            ref="origin/$base"
+          else
+            echo "::error::mutants base ref '$base' not found"; exit 1
+          fi
+          git diff --relative=app "$ref"...HEAD -- '*.rs' > "$RUNNER_TEMP/changed.diff"
           echo "lines=$(wc -l < "$RUNNER_TEMP/changed.diff" | tr -d ' ')" >> "$GITHUB_OUTPUT"
       - name: Mutation-test the diff
         if: steps.diff.outputs.lines != '0'

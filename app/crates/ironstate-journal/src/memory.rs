@@ -33,11 +33,11 @@ impl<A: AggregateRules + Clone> MemoryJournal<A> {
     }
 
     fn record_at(&self, at: Seq) -> Result<&Record<A>, JournalError> {
-        // `at` is journal-minted (Seq counts up to records.len()), so this cast
-        // is exact on every supported target. An adapter that deserializes Seq
-        // from storage should validate it before indexing: on a 32-bit target a
-        // hand-crafted out-of-range Seq would truncate here rather than be caught.
-        if at.0 == 0 || at.0 as usize > self.records.len() {
+        // Seq is public, so a caller can pass an out-of-range value. Compare in
+        // u64 and only cast once it is within bounds — otherwise on a 32-bit
+        // target an out-of-range Seq could truncate to a valid index instead of
+        // returning UnknownSeq.
+        if at.0 == 0 || at.0 > self.records.len() as u64 {
             return Err(JournalError::UnknownSeq { at });
         }
         Ok(&self.records[(at.0 - 1) as usize])
@@ -111,7 +111,7 @@ impl<A: AggregateRules + Clone> Journal<A> for MemoryJournal<A> {
     }
 
     fn fork(&self, at: Seq) -> Result<Self, JournalError> {
-        if at.0 as usize > self.records.len() {
+        if at.0 > self.records.len() as u64 {
             return Err(JournalError::UnknownSeq { at });
         }
         let cutoff = at.0 as usize;

@@ -5,6 +5,13 @@ on [Keep a Changelog](https://keepachangelog.com/); from the next release on, th
 entries are maintained by release-plz. This crate is the journal tier of the
 [ironstate](https://github.com/kassian-dev/ironstate) family.
 
+## [0.1.4](https://github.com/kassian-dev/ironstate/compare/ironstate-journal-v0.1.3...ironstate-journal-v0.1.4) - 2026-06-23
+
+### Other
+
+- *(agents)* codify the rustdoc + runnable-examples convention ([#29](https://github.com/kassian-dev/ironstate/pull/29))
+- *(quality)* scope mutants to source PRs; document determinism and secret boundaries ([#28](https://github.com/kassian-dev/ironstate/pull/28))
+
 ## [0.1.3](https://github.com/kassian-dev/ironstate/compare/ironstate-journal-v0.1.2...ironstate-journal-v0.1.3) - 2026-06-20
 
 ### Other

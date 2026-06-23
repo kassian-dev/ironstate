@@ -5,6 +5,12 @@ on [Keep a Changelog](https://keepachangelog.com/); from the next release on, th
 entries are maintained by release-plz. This crate provides the procedural macros
 for [`ironstate`](https://github.com/kassian-dev/ironstate).
 
+## [0.1.3](https://github.com/kassian-dev/ironstate/compare/ironstate-derive-v0.1.2...ironstate-derive-v0.1.3) - 2026-06-23
+
+### Other
+
+- *(agents)* codify the rustdoc + runnable-examples convention ([#29](https://github.com/kassian-dev/ironstate/pull/29))
+
 ## [0.1.2](https://github.com/kassian-dev/ironstate/compare/ironstate-derive-v0.1.1...ironstate-derive-v0.1.2) - 2026-06-20
 
 ### Other

@@ -1,29 +1,24 @@
 name: Mutants
 
-# Mutation-test the changed Rust with cargo-mutants --in-diff: advisory, it
-# reports surviving mutants in a sticky PR comment but never blocks.
-#
-# Scoped to pull requests that touch library source — on a docs/deps/test-only
-# PR there is nothing to mutate, so running there only burned CI. A manual
-# workflow_dispatch run is available for an on-demand check against any base.
+# Mutation-test the changed Rust with cargo-mutants --in-diff. Manual only:
+# run it from the Actions tab, or `gh workflow run mutants.yml -f base=<branch>`,
+# when changing core logic. Advisory — results go to the run summary, nothing
+# blocks. Kept off pull_request on purpose: on most PRs (docs, deps, test-only,
+# assertion-heavy helpers) it has little to mutate, so it ran for no signal.
 on:
-  pull_request:
-    paths:
-      - "app/crates/**/src/**/*.rs"
   workflow_dispatch:
     inputs:
       base:
-        description: "Branch to diff against for --in-diff"
+        description: "Branch (or ref) to diff against for --in-diff"
         required: false
         default: main
 
 permissions:
   contents: read
-  pull-requests: write # sticky PR comment
 
 jobs:
   mutants:
-    name: mutants (advisory)
+    name: mutants (manual)
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -38,30 +33,25 @@ jobs:
           tool: cargo-mutants
       - name: Diff of changed Rust (paths relative to app/)
         id: diff
-        # On a pull request, diff against its base; on a manual run, against the
-        # chosen branch (default main). Values come through env, not interpolated
-        # straight into the script.
+        # Diff against the chosen branch (default main). The value comes through
+        # env, not interpolated straight into the script.
         env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
           INPUT_BASE: ${{ inputs.base }}
         run: |
-          base="${BASE_SHA:-origin/${INPUT_BASE:-main}}"
+          base="origin/${INPUT_BASE:-main}"
           git rev-parse --verify --quiet "$base^{commit}" >/dev/null \
             || { echo "::error::mutants base ref '$base' not found"; exit 1; }
           git diff --relative=app "$base"...HEAD -- '*.rs' > "$RUNNER_TEMP/changed.diff"
           echo "lines=$(wc -l < "$RUNNER_TEMP/changed.diff" | tr -d ' ')" >> "$GITHUB_OUTPUT"
       - name: Mutation-test the diff
         if: steps.diff.outputs.lines != '0'
-        continue-on-error: true # advisory: surviving mutants must not fail the build
+        continue-on-error: true # advisory: surviving mutants must not fail the run
         timeout-minutes: 15 # bound the run; a huge diff reports partial results
         # Generous per-mutant timeout: the seeded suite runs in seconds, so a
         # finite mutant finishes well under this — only a true hang times out.
-        # This keeps results deterministic (a survivor drops off only when the
-        # code/tests actually changed, not from timing), so the comment doesn't
-        # falsely flip to "clean".
+        # This keeps results reproducible (a survivor drops off only when the
+        # code/tests actually changed, not from build timing).
         run: make mutants MUTANTS_ARGS="--in-diff $RUNNER_TEMP/changed.diff --timeout 120"
       - name: Report surviving mutants
         if: steps.diff.outputs.lines != '0'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: bash .github/report-mutants.sh

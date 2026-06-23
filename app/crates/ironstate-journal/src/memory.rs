@@ -81,7 +81,9 @@ impl<A: AggregateRules + Clone> Journal<A> for MemoryJournal<A> {
     }
 
     fn events_since(&self, after: Option<Seq>) -> Result<Vec<VersionedEvent<A>>, JournalError> {
-        let start = after.map_or(0, |s| s.0 as usize);
+        // Saturate rather than truncate: an out-of-range `after` (possible only on
+        // a 32-bit target, since Seq is public) means "past the end", so skip all.
+        let start = after.map_or(0, |s| usize::try_from(s.0).unwrap_or(usize::MAX));
         let type_name = Cow::Borrowed(core::any::type_name::<A::Event>());
         Ok(self
             .records

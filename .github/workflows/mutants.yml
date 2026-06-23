@@ -9,7 +9,7 @@ name: Mutants
 on:
   pull_request:
     paths:
-      - "app/crates/**/src/**.rs"
+      - "app/crates/**/src/**/*.rs"
   workflow_dispatch:
     inputs:
       base:
@@ -46,7 +46,9 @@ jobs:
           INPUT_BASE: ${{ inputs.base }}
         run: |
           base="${BASE_SHA:-origin/${INPUT_BASE:-main}}"
-          git diff --relative=app "$base"...HEAD -- '*.rs' > "$RUNNER_TEMP/changed.diff" || true
+          git rev-parse --verify --quiet "$base^{commit}" >/dev/null \
+            || { echo "::error::mutants base ref '$base' not found"; exit 1; }
+          git diff --relative=app "$base"...HEAD -- '*.rs' > "$RUNNER_TEMP/changed.diff"
           echo "lines=$(wc -l < "$RUNNER_TEMP/changed.diff" | tr -d ' ')" >> "$GITHUB_OUTPUT"
       - name: Mutation-test the diff
         if: steps.diff.outputs.lines != '0'

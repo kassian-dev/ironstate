@@ -14,7 +14,7 @@ Each layer below states what it proves and where it lives. The done-gate is
 | Determinism | Same seed + inputs ⇒ identical digest, byte-for-byte across targets | `determinism_test!()`; CI diffs the digests on x86_64 vs aarch64 |
 | Leak | No covert flow from one principal's hidden state to another's view | `leak_test!()` |
 | Conformance | A journal adapter satisfies the seven contract properties | `journal_contract_test!()` |
-| Entropy contract | A custom `EntropySource` draws unbiasedly, seeks in O(1), and forks purely | `assert_entropy_contract()` |
+| Entropy contract | A custom `EntropySource` draws in range and covers it, reconstructs its stream on seek, and forks purely | `assert_entropy_contract()` |
 | Simulation | Faults are invisible to outcomes | `scenario_test!()` |
 | Fuzz / hostile input | Garbage is rejected with a typed error, never a panic | `cargo-fuzz` on the versioned-restore decode path; blocks on a crash (uploads the reproducer), every PR |
 | Mutation | The suite actually catches bugs | `cargo-mutants --in-diff` on changed code; advisory (sticky PR comment, never blocks), every PR |
@@ -33,7 +33,7 @@ and compile-fail are CI/maintainer layers — or that every machine gets for fre
 | `determinism_test!` | your aggregate **draws entropy**, or you rely on replay / audit digests / cross-target reproducibility | no entropy and the state is trivially deterministic |
 | `leak_test!` | you have `#[hidden]` fields or per-viewer redaction (hidden-information domains) | nothing is concealed — there's nothing to leak |
 | `journal_contract_test!` | you **implement your own storage adapter** — it proves the seven durability properties | you use `MemoryJournal` or a provided adapter; it's already covered |
-| `assert_entropy_contract` | you **implement your own `EntropySource`**, or override its derived draws — it proves the unbiased-draw / O(1)-seek / pure-probe contract the determinism guarantee rests on | you use the provided `SeededEntropy` |
+| `assert_entropy_contract` | you **implement your own `EntropySource`**, or override its derived draws — it proves the in-range/covering-draw, seek-reconstruction, and pure-probe contract the determinism guarantee rests on | you use the provided `SeededEntropy` |
 | `scenario_test!` | durability under faults matters and you want crashes / forks / retries proven invisible to the outcome | an in-memory or non-durable use case |
 
 The two most often misapplied: `journal_contract_test!` is for *adapter authors*,
@@ -53,9 +53,10 @@ The [examples](../app/crates/examples) show the common combinations.
   guarantee the family exists to provide. A vector changes only when the
   contract intentionally changes, reviewed as a contract change.
 - **Test-the-testers fixtures.** Planted defects (a leaky aggregate, a
-  nondeterministic one, a snapshot-position confusion, a biased or non-seekable
-  entropy source) must be *caught* by their macro or check; a build where a
-  planted defect goes uncaught is red.
+  nondeterministic one, a snapshot-position confusion, an entropy source with an
+  out-of-range or degenerate draw, a broken or forward-only seek, a drifting
+  probe, or a bad shuffle) must be *caught* by their macro or check; a build
+  where a planted defect goes uncaught is red.
 
 ## What is implemented and how it is covered
 

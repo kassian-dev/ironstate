@@ -217,27 +217,35 @@ impl<Actor> CtxEntropy for OwnedDeterministicCtx<Actor> {
 /// `shuffle_len`. But the trait lets you *override* those — to keep a stream your
 /// golden vectors are already pinned to, or to wrap a different generator — and
 /// nothing in an ordinary test suite re-checks that an override stays
-/// well-behaved: an in-range, unbiased draw; a real permutation; a seek that
-/// lands you exactly back. This runs those checks in one call, the same way
+/// well-behaved: an in-range, *covering* draw; a real permutation; a seek that
+/// lands you exactly back — including the backward rewind a failed command uses.
+/// This runs those checks in one call, the same way
 /// [`journal_contract_test!`](crate) proves a custom journal adapter conforms.
 ///
 /// It checks *properties*, not specific values, so it passes for any correct
 /// algorithm — the default bit-mask scheme or your own modulo/rejection one. It
-/// deliberately does **not** pin your stream's exact bytes; keep a separate
-/// golden-vector test (a frozen `draw_u64` sequence) for that, since those values
-/// are yours, not the contract's.
+/// verifies a draw stays in range and *covers* that range (a constant or
+/// truncated draw is caught), not that it is statistically uniform — a subtle
+/// modulo bias is the golden vector's job, not this. Likewise it proves `seek`
+/// *reconstructs* the stream, not that it is O(1) (that is a property of
+/// `SeededEntropy`, not something a conformance check can time). It deliberately
+/// does **not** pin your stream's exact bytes; keep a separate golden-vector test
+/// (a frozen `draw_u64` sequence) for that, since those values are yours, not the
+/// contract's.
 ///
 /// `fresh` must return a brand-new source at the start of the *same* seed on
 /// every call — the checks reconstruct and seek it.
 ///
 /// # What it proves
 /// - **same seed, same stream** — two fresh sources agree word-for-word;
-/// - **O(1) seek round-trips** — draw to a position, seek a fresh source there,
-///   and the next value matches (the replay/rewind contract);
+/// - **seek reconstructs the stream** — draw to a position, seek a fresh source
+///   there, and the next value matches; and a backward seek from an advanced
+///   position rewinds (the replay/rewind contract);
 /// - **`probe` is pure** — it leaves the parent's position untouched and forks
 ///   from exactly that position;
-/// - **`draw_range(a..b)` stays in `[a, b)`**, and a unit range `x..x+1` is the
-///   constant `x`;
+/// - **`draw_range(a..b)` stays in `[a, b)` and covers it** — a unit range
+///   `x..x+1` is the constant `x`, and a small range reaches every value (a
+///   constant or truncated draw is caught);
 /// - **`draw_below(0, d)` is never true; `draw_below(d, d)` always is**;
 /// - **`shuffle_len(n)` is a permutation of `0..n`**, agrees with `shuffle` over
 ///   the identity, and `shuffle_len(1)` draws nothing.
@@ -284,7 +292,7 @@ impl<Actor> CtxEntropy for OwnedDeterministicCtx<Actor> {
 ///     }
 /// }
 ///
-/// // One call verifies the override is still unbiased, in-range, seekable, and
+/// // One call verifies the override is still in-range, covering, seekable, and
 /// // forkable. It panics with a teaching message if any property breaks.
 /// assert_entropy_contract(|| Splitmix { seed: 7, pos: 0 });
 /// ```
@@ -304,7 +312,7 @@ pub fn assert_entropy_contract<E: EntropySource>(fresh: impl Fn() -> E) {
         );
     }
 
-    // O(1) seek round-trips: a fresh source seeked to a position resumes the stream.
+    // seek round-trips: a fresh source seeked to a position resumes the stream.
     let mut original = fresh();
     for _ in 0..5 {
         original.draw_u64();
@@ -318,6 +326,24 @@ pub fn assert_entropy_contract<E: EntropySource>(fresh: impl Fn() -> E) {
         next,
         "seek must reconstruct the stream: a fresh source seeked to {pos:?} drew a \
          different next value than the original",
+    );
+
+    // seek rewinds, not only fast-forwards: the abort path seeks backward to undo
+    // a rejected command. Remember a position and the value at it, draw well past
+    // it, then seek back — the stream must resume from there.
+    let mut e = fresh();
+    e.draw_u64();
+    e.draw_u64();
+    let early = e.draws();
+    let at_early = e.draw_u64();
+    for _ in 0..5 {
+        e.draw_u64();
+    }
+    e.seek(early);
+    assert_eq!(
+        e.draw_u64(),
+        at_early,
+        "seek must rewind to an earlier position {early:?}, not only fast-forward",
     );
 
     // probe is pure: it does not advance the parent, and forks from exactly here.
@@ -353,6 +379,20 @@ pub fn assert_entropy_contract<E: EntropySource>(fresh: impl Fn() -> E) {
         let v = e.draw_range(5..6);
         assert_eq!(v, 5, "draw_range(5..6) must be the constant 5, drew {v}");
     }
+
+    // draw_range covers its range: a draw that stays in bounds but collapses to
+    // one value (a constant or truncated source) is still broken, and the
+    // in-range check alone would pass it. Not a uniformity test — just that every
+    // value is reachable.
+    let mut e = fresh();
+    let mut seen = [false; 6];
+    for _ in 0..200 {
+        seen[e.draw_range(0..6) as usize] = true;
+    }
+    assert!(
+        seen.iter().all(|&hit| hit),
+        "draw_range(0..6) must reach every value over many draws, but missed some: {seen:?}",
+    );
 
     // draw_below boundaries: 0/den is never true, den/den always is.
     let mut e = fresh();

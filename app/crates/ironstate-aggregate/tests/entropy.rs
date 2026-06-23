@@ -75,6 +75,10 @@ enum Defect {
     /// `shuffle_len`'s Fisher–Yates loop starts one too low, so it draws for
     /// `len == 1` instead of issuing zero draws.
     DrawingShuffle,
+    /// `draw_range` collapses to the low bound — in range, but never varies.
+    DegenerateDraw,
+    /// `seek` only ever moves forward; a backward seek (rewind) is ignored.
+    ForwardOnlySeek,
 }
 
 struct Planted {
@@ -101,8 +105,10 @@ impl EntropySource for Planted {
         splitmix(self.pos)
     }
     fn seek(&mut self, pos: DrawPos) {
-        if !matches!(self.defect, Defect::DeadSeek) {
-            self.pos = pos.0;
+        match self.defect {
+            Defect::DeadSeek => {}                            // ignores every seek
+            Defect::ForwardOnlySeek if pos.0 < self.pos => {} // refuses to rewind
+            _ => self.pos = pos.0,
         }
     }
     fn draws(&self) -> DrawPos {
@@ -121,6 +127,9 @@ impl EntropySource for Planted {
     fn draw_range(&mut self, range: Range<u64>) -> u64 {
         if matches!(self.defect, Defect::OutOfRange) {
             return range.start + self.draw_u64(); // unmasked: escapes [a, b)
+        }
+        if matches!(self.defect, Defect::DegenerateDraw) {
+            return range.start; // in range, but constant — never covers the range
         }
         let n = range.end - range.start;
         let zone = u64::MAX - (u64::MAX % n);
@@ -197,4 +206,16 @@ fn contract_catches_an_off_by_one_draw_below() {
 #[should_panic(expected = "shuffle_len(1) must draw nothing")]
 fn contract_catches_a_drawing_shuffle_len() {
     assert_entropy_contract(|| Planted::new(Defect::DrawingShuffle));
+}
+
+#[test]
+#[should_panic(expected = "must reach every value")]
+fn contract_catches_a_degenerate_draw() {
+    assert_entropy_contract(|| Planted::new(Defect::DegenerateDraw));
+}
+
+#[test]
+#[should_panic(expected = "must rewind")]
+fn contract_catches_a_forward_only_seek() {
+    assert_entropy_contract(|| Planted::new(Defect::ForwardOnlySeek));
 }

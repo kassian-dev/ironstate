@@ -2,9 +2,9 @@
 //!
 //! Variant enumeration builds one representative per variant by constructing
 //! the variant directly and filling each *field* with `Default::default()`. So
-//! the requirement lands on the payload field types, never on the enum: these
-//! types deliberately do **not** implement `Default`, and must still derive and
-//! analyse.
+//! the requirement lands on the payload field types, never on the enum: the
+//! enums below deliberately do **not** implement `Default` — only the type
+//! their variants carry does — and they must still derive and analyze.
 
 use ironstate::prelude::*;
 
@@ -55,7 +55,6 @@ impl TransitionRules for Article {
 
 // The whole point: this compiles, and `analyze!` walks every variant, without
 // `Article` or `Edit` implementing `Default`.
-#[cfg(test)]
 ironstate::analyze!(Article);
 
 #[test]

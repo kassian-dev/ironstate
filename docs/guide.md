@@ -97,6 +97,8 @@ You wrote the machine; now check it, from the same definition.
 ironstate::analyze!(Article);
 ```
 
+One requirement comes with this. To walk every state, the derive builds one representative per variant, filling any data-carrying fields with `Default::default()` — analysis is variant-level, so the field values are never the point. Any data carried by a state or event must therefore implement `Default` (i.e., the field types must implement `Default`), or you can hand-write the impl the derive would have generated — `StateMachine` for a state, `EventKind` for an event. Fieldless enums, including the phase machines in section 6, need nothing extra.
+
 `test!` generates thousands of random event sequences and checks, after every step, that your rules hold and nothing panicked. If you declare invariants — properties that must always be true — it checks those too. When something breaks, it shrinks to the shortest failing sequence and is reproducible with a seed.
 
 Invariants do their sharpest work on something the structure can't state on its own: a condition on the *data* a state carries. `Article`'s states are plain, so picture instead a cart that tracks its item count, capped at fifty.
@@ -273,4 +275,4 @@ Determinism isn't a promise in prose; it's enforced. The `StableHash` derive ref
 
 - The runnable examples: [`release-pipeline`](../app/crates/examples/release-pipeline), [`ledger`](../app/crates/examples/ledger), [`hidden-info`](../app/crates/examples/hidden-info).
 - The API reference on docs.rs: [`ironstate`](https://docs.rs/ironstate), [`ironstate-aggregate`](https://docs.rs/ironstate-aggregate), [`ironstate-journal`](https://docs.rs/ironstate-journal).
-- The design in one page: [`design.md`](design.md). Why the code is shaped as it is: [`decisions/`](decisions).
+- The design in one page: [`design.md`](design.md). Why the code is shaped as it is — and what deliberately doesn't exist: [`AGENTS.md`](../AGENTS.md).

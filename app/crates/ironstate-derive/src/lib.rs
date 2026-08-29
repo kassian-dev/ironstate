@@ -25,6 +25,15 @@ mod statemachine;
 /// #[state_machine(initial = Draft, terminal = [Published, Archived])]
 /// enum Article { Draft, Review, Published, Archived }
 /// ```
+///
+/// # Data-carrying fields must implement `Default`
+///
+/// `analyze!` and `test!` walk every state variant, and the derive builds one
+/// representative per variant to walk. Analysis is variant-level, so any
+/// data-carrying fields are filled with `Default::default()` — the payload types
+/// must therefore implement `Default`, or you can hand-write the `StateMachine` impl.
+/// Fieldless enums (including the aggregate tier's phase machines) need nothing
+/// extra.
 #[proc_macro_derive(StateMachine, attributes(state_machine, only_accepts))]
 pub fn derive_state_machine(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
@@ -45,6 +54,12 @@ pub fn derive_state_machine(input: TokenStream) -> TokenStream {
 ///     Reject,
 /// }
 /// ```
+///
+/// # Data-carrying fields must implement `Default`
+///
+/// As with `StateMachine`, variant enumeration builds one representative per
+/// variant and fills its fields with `Default::default()`, so the payload field
+/// types of a data-carrying event variant must implement `Default`.
 #[proc_macro_derive(Event, attributes(event_kind, likelihood))]
 pub fn derive_event(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);

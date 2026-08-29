@@ -14,17 +14,18 @@ cite it. When code and a doc disagree, the code is wrong until the doc is amende
   verification ladder, the determinism contract, the vocabulary.
 - `docs/testing.md` — the test taxonomy: what each layer proves and where it lives.
 - The README's "Releasing & supply-chain security" section — how publishing works.
-- `docs/decisions/` — why the code is shaped the way it is, including what was
-  deliberately deferred or dropped. A fresh context should be able to reconstruct
-  every "why" from these files, not from chat.
+- "Counter-intuitive things" and "What deliberately doesn't exist", below — why
+  the code is shaped the way it is, and what was deferred or dropped on purpose.
+  A fresh context should be able to reconstruct every "why" from the repo, not
+  from chat.
 
 ## Engineering standard
 
 Documents are law; one source of truth per domain; machine-checkable beats prose
-(every invariant has a test); honest state (debt and deferrals are recorded in
-`docs/decisions/` with their resolution, never silent); one done-gate for
-everyone (`make check`). Generated artifacts are never hand-edited. Decision
-records are files in the repo, not chat history.
+(every invariant has a test); honest state (debt and deferrals are recorded
+under "What deliberately doesn't exist" with their trigger, never silent); one
+done-gate for everyone (`make check`). Generated artifacts are never
+hand-edited. Rationale lives in files in the repo, not chat history.
 
 ## Non-negotiable invariants (each with the test that enforces it)
 
@@ -64,6 +65,21 @@ Agents and humans use the same gate. There is no looser "agent mode." On every
 pull request, `fuzz.yml` additionally fuzzes the restore-decode path
 (`make fuzz`, blocks on a crash). Mutation-testing the changed code
 (`make mutants --in-diff`, advisory) is a separate manual workflow, `mutants.yml`.
+
+**Why they are gated differently.** Untrusted bytes enter ironstate in exactly
+one place — `restore_versioned` decoding a stored `{version, payload}` envelope
+— so fuzzing that path **blocks**: a crash there is a real, reproducible bug.
+Because the run is non-deterministic, a found crash is folded into the corpus
+(and uploaded) so libFuzzer replays it every run and re-fails until fixed; the
+lasting gate is a regression test built from the reproducer. Fuzzing needs a
+nightly toolchain, isolated to that one CI job — the crates themselves stay on
+stable. Mutation testing is **advisory**: it reports survivors to the run summary
+but never fails the build, because equivalent mutants would otherwise block
+unrelated work. A generous per-mutant timeout keeps results reproducible (a
+survivor drops off only when code or tests change, not from build timing). It is
+manual because most PRs have little to mutate; trigger it when changing core
+logic. Blocking on mutants can be revisited once the equivalent-mutant excludes
+settle.
 
 ## Workflow order
 
@@ -117,6 +133,70 @@ a stale map (this has been missed before):
 6. `docs/guide.md` — only if it mirrors the guide's tutorial arc; adoption-only
    examples (`catalog-ctx`, `async-store`) stay out of the beginner path.
 
+## What deliberately doesn't exist
+
+Recorded so it isn't re-derived, re-proposed, or "helpfully" added. Each entry
+says why it isn't there and what would change that.
+
+**Dropped.**
+
+- **The dylint determinism lints** (`ironstate-lints`: no floats in aggregate
+  state, no unordered iteration in `decide`/`evolve`, no wall-clock reads). The
+  contract they would enforce is *already* executable — the `StableHash` derive
+  rejects floats / hash maps / wall clocks at compile time (`trybuild` fixtures),
+  the `EntropySource` API has no float or clock method, and `determinism_test!`
+  fails on any non-determinism in `decide`/`evolve` (planted-defect fixture).
+  The lints would add only lint-time feedback for a violation a consumer forgot
+  to test, at the cost of a `cdylib` linking rustc internals on a pinned nightly,
+  churn as those internals drift, and an extra CI step. Consumers run on
+  **stable**. *Revisit only if a consumer asks for lint-time feedback.*
+
+**Deferred — designed, not built.**
+
+- **Core rungs**: `model_test!`, the stateright bridge, Kani harnesses, Mermaid
+  output, formal mathematical output, async listeners. None are load-bearing for
+  the aggregate/journal milestones. The no-op feature flags that once stood in
+  for them were removed so the published crates do not advertise capabilities
+  they lack; when one is built it ships with its feature flag and tests in the
+  same change.
+- **The aggregate stateright bridge (`BranchingEntropy`)** — exhaustive model
+  checking for aggregates. Recorded design: entropy becomes branching
+  nondeterminism to explore rather than a stream to sample; the consumer supplies
+  shrunk bounds and a command enumerator (`why_not` makes legal-command
+  enumeration cheap); `Digest128` is the state-dedup fingerprint; results carry a
+  new `[proven@bounds]` label. *Activates when a consumer names a liveness
+  property they need proven* (a match clock forcing "always eventually terminal";
+  "the active actor always has a legal move"). A first activation review found no
+  surviving property in the candidate ruleset — termination and legality were
+  structural.
+- **Cross-journal invariants** spanning more than one aggregate's journal (e.g.
+  conservation across matches). Evidence-gated; likely an extension of the
+  subscription/scenario reference-run machinery rather than the stateright
+  bridge.
+- **The proptest `subscription_test!`** over a *generated* source stream with
+  fault-injected redelivery. The in-process `Subscription` and its idempotency
+  property are built and tested (duplicates and out-of-order redeliveries are
+  dropped, converging to exactly-once); the macro would share the
+  `scenario_test!` fault machinery.
+- **Kani for aggregates** — state-space explosion over struct state needs its own
+  design.
+
+**Out of scope — downstream, or unneeded.**
+
+- **Storage adapters** (Postgres, SQLite, …) — downstream, written against the
+  `Journal` trait and held to `journal_contract_test!`. *Gate: until a second
+  consumer wants one.*
+- **Message transport / durable delivery (outboxes)** — application code. This
+  rules out ironstate *implementing* an outbox; it does not settle whether the
+  `Journal` trait should expose a seam for a caller's own transaction, which is
+  a separate question about where the I/O boundary sits.
+- **Commit–reveal / seed-commitment protocols** — built *on* `AuditDigest` by
+  applications; no seed-commitment API in the family.
+- **Event-level redaction** — the view-distribution model (clients consume views,
+  not raw events) removes the need. *Revisit only with evidence.*
+- **A generic snapshot-cadence policy engine** — snapshot when you like; cadence
+  is application policy, not a trait method.
+
 ## Counter-intuitive things (don't "helpfully" undo)
 
 - **Toolchain tracks latest stable** (`app/rust-toolchain.toml`), not a pinned
@@ -144,5 +224,22 @@ a stale map (this has been missed before):
   `restore` enables `ironstate/restore`).
 - **`anyhow` is for application/binary/test glue only.** Library public errors
   stay typed (`thiserror`-style) so consumers map what/why/fix off variants.
-- See `docs/decisions/0001-foundational-decisions.md` for the full list with
-  rationale.
+- **Data-carrying fields must implement `Default`.** `analyze!` and `test!` walk every variant, and the derives build one representative per variant with `Default::default()` in its fields — analysis is variant-level, so the values are never the point. Fieldless enums (the aggregate tier's phase machines) need nothing. Documented for adopters in `docs/guide.md` and the derive rustdoc.
+- **`resume` returns `ResumeError`, not bare `RestoreError`.** Resuming reads the
+  journal (`JournalError`), replays (`RestoreError` on a version mismatch), and
+  may find no base snapshot. Core's `RestoreError` is `#[non_exhaustive]` and
+  cannot be extended from the journal crate, so `resume` names all three causes
+  honestly. `replay` and `replay_hash` still return `RestoreError` directly.
+- **Cross-target determinism is checked x86_64 vs aarch64; wasm32 is
+  build-only.** The `test` matrix runs the seeded `determinism_test!` digests on
+  both Linux architectures and the `determinism` job fails if the manifests
+  differ — aarch64 because it is a first-class hosted runner with a different
+  codegen backend, so the suite just runs there. wasm32 is the more obvious
+  target and the encoding is designed to be wasm-identical, but running the
+  seeded suite under wasm needs a wasm test runner (wasmtime + `wasm32-wasip1`,
+  with proptest/getrandom wired up), so `make wasm` stays a *build-only* check:
+  the determinism-sensitive crates must link with no host dependence, and an
+  undefined wasm symbol is a hard error. The per-target
+  `target/ironstate-determinism/*.digest` files are ephemeral CI artifacts
+  (regenerated every run, gitignored) — distinct from the write-once golden
+  vectors pinned in source.

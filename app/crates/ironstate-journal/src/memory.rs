@@ -253,10 +253,16 @@ impl<A: AggregateRules + Clone> Journal<A> for MemoryJournal<A> {
         let Some(stream) = self.streams.get(stream) else {
             return Ok(Some(self.genesis_snapshot()));
         };
-        // The highest-`at` snapshot — the most useful base for replay.
+        // The highest-`at` snapshot at or below the head — the most useful base
+        // for replay. One recorded beyond the head describes state this stream
+        // does not have, and `resume` would hand it back verbatim, so it is
+        // ignored here for the same reason `latest_snapshot_at` ignores it when
+        // authorising a truncation.
+        let head = stream.truncated + stream.records.len() as u64;
         Ok(stream
             .snapshots
             .iter()
+            .filter(|s| s.at.0 <= head)
             .max_by_key(|s| s.at)
             .map(clone_snapshot))
     }

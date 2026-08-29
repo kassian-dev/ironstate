@@ -538,3 +538,37 @@ fn truncating_below_an_existing_horizon_is_refused() {
     assert_eq!(journal.retained_from(&stream()), Seq(4));
     assert_eq!(journal.head(&stream()), Some(Seq(6)));
 }
+
+/// A snapshot recorded past the head is not a base `resume` may use: it
+/// describes state the stream does not have, and returning it verbatim would
+/// be a wrong aggregate handed back as `Ok`.
+#[test]
+fn resume_ignores_a_snapshot_recorded_past_the_head() {
+    let (mut journal, agg, seed) = driven(6);
+    let truth = agg.state().clone();
+
+    // A bogus snapshot, past the head and with state that is deliberately not
+    // the truth, so using it would be visible.
+    journal
+        .snapshot_in(
+            &mut (),
+            &stream(),
+            Snapshot {
+                state: Counter {
+                    phase: Phase::Open,
+                    total: 9999,
+                },
+                schema_version: 0,
+                at: Seq(1000),
+                entropy_pos: DrawPos(0),
+            },
+        )
+        .unwrap();
+
+    let (resumed, _) = resume::<Counter, _>(&journal, &stream(), &seed).unwrap();
+    assert_eq!(
+        resumed.state(),
+        &truth,
+        "resume must replay from a real base, not one recorded past the head",
+    );
+}

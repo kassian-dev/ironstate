@@ -11,6 +11,7 @@ members = [
     "crates/examples/ledger",
     "crates/examples/catalog-ctx",
     "crates/examples/async-store",
+    "crates/examples/outbox",
 ]
 
 [workspace.package]

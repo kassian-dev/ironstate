@@ -122,8 +122,11 @@ and the rustdoc building under `-D warnings`.
 - **Examples as end-to-end tests** — done: `hidden-info` (redaction + journal +
   subscription, all five macros), `release-pipeline` (a core lifecycle machine),
   `ledger` (an aggregate over a journal), `catalog-ctx` (the owned `Ctx`: a
-  catalog plus a live entropy stream), and `async-store` (an async adapter kept
-  under `journal_contract_test!` by a sync twin). Each example's test module is an
+  catalog plus a live entropy stream), `async-store` (an async adapter kept
+  under `journal_contract_test!` by a sync twin), and `outbox` (a journal
+  enlisting in the caller's transaction, with atomicity tests proving a
+  rolled-back transaction leaves no event, no projection, no queued job and an
+  un-evolved aggregate). Each example's test module is an
   e2e test of a realistic use case; the [examples index](../app/crates/examples)
   maps each to the tier and test layers it exercises.
 

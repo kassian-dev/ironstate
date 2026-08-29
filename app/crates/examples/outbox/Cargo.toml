@@ -1,0 +1,19 @@
+[package]
+name = "outbox"
+version = "0.0.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+description = "A journal that enlists in the caller's transaction, so an append and the work it causes commit together; an end-to-end example"
+
+[dependencies]
+ironstate = { workspace = true }
+ironstate-aggregate = { workspace = true }
+ironstate-journal = { workspace = true }
+anyhow.workspace = true
+thiserror.workspace = true
+
+[[bin]]
+name = "outbox"
+path = "src/main.rs"

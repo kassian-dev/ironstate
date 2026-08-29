@@ -252,6 +252,11 @@ demo whose test module is an end-to-end test of a realistic use case; the
   durable without implementing the synchronous `Journal`: the append-before-ack
   loop via `prepare`/`commit`/`abort` around an awaited append, with a sync twin
   held to `journal_contract_test!`.
+- **`outbox`** — a journal that enlists in the *caller's* transaction, so an
+  append and the work it causes commit together: `execute_in` returning a
+  `Pending` the caller drives once the transaction resolves, with a read-model
+  row and an outbound job landing in the same unit of work — or none of it
+  landing at all.
 
 ---
 

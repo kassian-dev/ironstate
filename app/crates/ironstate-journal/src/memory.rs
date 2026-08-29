@@ -223,7 +223,13 @@ impl<A: AggregateRules + Clone> ForkableJournal<A> for MemoryJournal<A> {
                 Err(JournalError::UnknownSeq { at })
             };
         };
-        if at.0 < source.truncated || at.0 > source.truncated + source.records.len() as u64 {
+        // A fork must reproduce the source's records through `at`. Anything at
+        // or below the truncation horizon is gone, so it cannot be forked —
+        // and forking *at* the horizon would yield a branch whose head is not
+        // the fork point.
+        let head = source.truncated + source.records.len() as u64;
+        let below_horizon = source.truncated > 0 && at.0 <= source.truncated;
+        if at.0 > head || below_horizon {
             return Err(JournalError::UnknownSeq { at });
         }
         let cutoff = (at.0 - source.truncated) as usize;
@@ -274,17 +280,12 @@ impl<A: AggregateRules + Clone> RetainableJournal<A> for MemoryJournal<A> {
         stream.records.drain(..drop_count);
         stream.truncated += drop_count as u64;
 
-        // Snapshots below the new horizon are no longer reachable bases, but the
-        // newest one at or before it must survive — it is what replay starts from.
-        if let Some(keep) = stream
-            .snapshots
-            .iter()
-            .filter(|s| s.at.0 <= stream.truncated)
-            .map(|s| s.at)
-            .max()
-        {
-            stream.snapshots.retain(|s| s.at >= keep);
-        }
+        // A snapshot below the new horizon is no longer a valid base: replaying
+        // from it would need records that are now gone, and would silently
+        // produce a *wrong* aggregate rather than an error. The refusal check
+        // above guarantees at least one snapshot survives this.
+        let horizon = stream.truncated;
+        stream.snapshots.retain(|s| s.at.0 >= horizon);
         Ok(())
     }
 

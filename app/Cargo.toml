@@ -39,7 +39,7 @@ proptest = { version = "1", default-features = false, features = ["std", "bit-se
 thiserror = "2"
 # anyhow for application/binary/test glue; the library's public errors stay typed.
 anyhow = "1"
-syn = { version = "2", features = ["full", "extra-traits"] }
+syn = { version = "3", features = ["full", "extra-traits"] }
 quote = "1"
 proc-macro2 = "1"
 serde = { version = "1", features = ["derive"] }

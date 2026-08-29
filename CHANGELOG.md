@@ -19,4 +19,4 @@ changelog above for its notes.
 - The `ironstate-lints` dylint crate was considered and dropped; the determinism
   contract it would enforce is already executable via the `StableHash`
   compile-errors, the clock-free entropy API, and `determinism_test!`. See
-  [`docs/decisions/0002-deferred-and-out-of-scope.md`](docs/decisions/0002-deferred-and-out-of-scope.md).
+  [`AGENTS.md`](AGENTS.md) under "What deliberately doesn't exist".

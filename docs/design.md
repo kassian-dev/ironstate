@@ -1,9 +1,8 @@
 # Ironstate design
 
 The enduring design of the family, distilled. This is the in-repo design
-reference; the *why* behind specific implementation choices lives in
-[`decisions/`](decisions), and the contributor workflow in
-[`../AGENTS.md`](../AGENTS.md).
+reference; the contributor workflow — and the record of what deliberately
+doesn't exist — lives in [`../AGENTS.md`](../AGENTS.md).
 
 ## What it is
 
@@ -25,6 +24,13 @@ Capabilities that would compromise one paradigm if reachable from the other are
 separated by crates. Listeners exist only in core; entropy exists only in the
 aggregate tier.
 
+The aggregate tier reuses core as a *definition*, not as a live instance: the
+phase is a field of the aggregate's state, so `evolve` owns it and no parallel
+`Machine<A::Phase>` is held. `phase.is_terminal()` and `phase.restriction()` are
+the same structural checks core's `apply` runs. Phase-hop legality — every
+`evolve`-produced phase change is a legal transition of the phase machine — is
+verified by the aggregate `test!` macro rather than by driving a held instance.
+
 Dependency direction: `aggregate → core`, `journal → aggregate`. Each crate
 publishes and versions independently.
 
@@ -39,6 +45,12 @@ publishes and versions independently.
 Because replay is a sequence of `evolve`s and `evolve` draws nothing, **replay
 consumes no entropy** — so the entropy position cannot be recomputed from events
 and must be recorded with every append. That single fact shapes the journal.
+
+## Sans-I/O
+
+Time enters as events or `LogicalTime` data; I/O lives in adapters. The pure
+core is what makes the whole verification ladder possible — a `decide` that
+could read a clock or a socket could not be replayed, hashed, or model-checked.
 
 ## The verification ladder
 
@@ -70,7 +82,8 @@ conditions are not prose — they are enforced:
 - The canonical encoding is **frozen**: integers little-endian in fixed width,
   `usize`/`isize` widened to 8 bytes so 32- and 64-bit targets agree, length
   prefixes and declaration-order discriminants so distinct values never collide.
-  Golden vectors pin it forever.
+  Golden vectors pin it forever. Any change is a *new additive encoding version*,
+  never a mutation of v1, because published `AuditDigest`s are immortal.
 
 Two digests, one encoding: `Digest128` (non-adversarial, detects accidental
 divergence) and `AuditDigest` (BLAKE3, collision-resistant, the only digest ever
@@ -91,14 +104,19 @@ Whole-enum versioning with a `version`/`history` grammar shared by core state
 machines and journal events: the derive requires a contiguous `MigrateFrom`
 chain at compile time, and a stored `{version, payload}` envelope is upcast to
 the current schema on load. House policy: *any* change to the wire shape bumps
-the version, with the trivial identity migration as the cost.
+the version — additive variants included — with the trivial identity
+`MigrateFrom` as the cost. Additive-without-bump silently depends on deploy
+gating, which is invisible to the type system and untestable.
 
 ## Vocabulary
 
 - **actor** — who issued a command (a consumer type, in `Ctx`).
 - **principal** — who is looking at state (a consumer type, in `#[redact]`).
 - **Ctx** — the `decide` context: entropy, actor, and logical time. An owned
-  associated type, so reference data enters by `Arc` rather than by borrow.
+  associated type, so reference data enters by `Arc` rather than by borrow: a
+  borrowing `Ctx<'a>` would leave the lifetime unconstrained by the impl. The
+  borrowing `DeterministicCtx<'a, Actor>` stays a call-site convenience, and its
+  `probing()` yields the owning form for `why_not`.
 - **residue** — the `Conceal` output; declared public.
 - **listener** — a core-machine callback fired at a transition (`on_transition` /
   `on_rejection`); observes only, never alters the move.

@@ -296,8 +296,9 @@ agent in a loop.
 
 **Workflow.** Documents are law: design intent is written down
 ([`docs/design.md`](docs/design.md)), code implements it, tests cite it. The
-order is doc change → code → tests → gates. See [`AGENTS.md`](AGENTS.md),
-[`docs/testing.md`](docs/testing.md), and [`docs/decisions/`](docs/decisions).
+order is doc change → code → tests → gates. See [`AGENTS.md`](AGENTS.md) — which
+also records what deliberately doesn't exist — and
+[`docs/testing.md`](docs/testing.md).
 
 ## Releasing & supply-chain security
 

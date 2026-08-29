@@ -26,6 +26,7 @@
 /// ironstate_journal::journal_contract_test!(MyPostgresJournal, MatchState);
 /// ironstate_journal::journal_contract_test!(MyForkingJournal, MatchState, forkable);
 /// ironstate_journal::journal_contract_test!(MyStore, MatchState, forkable, retainable);
+/// // capability markers may be given in either order
 /// ```
 #[macro_export]
 macro_rules! journal_contract_test {
@@ -57,6 +58,11 @@ macro_rules! journal_contract_test {
             $crate::testkit_support::run_contract_forkable::<$journal, $agg>(64, 24, 0xC047);
             $crate::testkit_support::run_contract_retainable::<$journal, $agg>(32, 24, 0xC047);
         }
+    };
+    // The capabilities are a set, not a sequence — accept either order rather
+    // than failing to match with a macro error.
+    ($journal:ty, $agg:ty, retainable, forkable) => {
+        $crate::journal_contract_test!($journal, $agg, forkable, retainable);
     };
 }
 

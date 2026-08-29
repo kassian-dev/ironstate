@@ -415,3 +415,59 @@ fn a_stale_base_below_the_horizon_never_produces_a_wrong_state() {
         },
     }
 }
+
+/// `at` names the first record to keep, so `Seq(0)` — genesis, not a record —
+/// is not a truncation point. Accepting it would report success while
+/// `retained_from` still said `Seq(1)`.
+#[test]
+fn truncating_before_genesis_is_refused() {
+    let (mut journal, _agg, _seed) = driven(6);
+    match journal.truncate_before(&stream(), Seq(0)) {
+        Err(JournalError::UnknownSeq { at }) => assert_eq!(at, Seq(0)),
+        other => panic!("expected UnknownSeq for Seq(0), got {other:?}"),
+    }
+    assert_eq!(journal.retained_from(&stream()), Seq(1));
+}
+
+/// A snapshot recorded past the head describes state the stream does not have,
+/// so it must not vouch for a truncation that would otherwise be illegal.
+#[test]
+fn a_snapshot_past_the_head_cannot_authorise_truncation() {
+    let seed = Seed([3; 32]);
+    let mut journal = MemoryJournal::new(genesis());
+    let mut agg = Aggregate::new(genesis()).unwrap();
+    for _ in 0..4 {
+        let pos = journal
+            .head(&stream())
+            .map_or(DrawPos(0), |h| journal.entropy_pos(&stream(), h).unwrap());
+        let mut c = ctx(&seed, pos);
+        execute(&mut journal, &stream(), &mut agg, &Command::Tick, &mut c).unwrap();
+    }
+    // The only real snapshot is genesis at Seq(0). Add a bogus one past the head.
+    journal
+        .snapshot_in(
+            &mut (),
+            &stream(),
+            Snapshot {
+                state: agg.state().clone(),
+                schema_version: 0,
+                at: Seq(99),
+                entropy_pos: DrawPos(0),
+            },
+        )
+        .unwrap();
+
+    // Truncating before Seq(3) needs a base at Seq(2) or later; only the bogus
+    // snapshot qualifies, and it must not count.
+    match journal.truncate_before(&stream(), Seq(3)) {
+        Err(JournalError::NoSnapshotForTruncation {
+            latest_snapshot, ..
+        }) => assert_eq!(
+            latest_snapshot,
+            Some(Seq(0)),
+            "the out-of-range snapshot must be ignored when reporting the newest base",
+        ),
+        other => panic!("expected refusal, got {other:?}"),
+    }
+    assert_eq!(journal.retained_from(&stream()), Seq(1));
+}

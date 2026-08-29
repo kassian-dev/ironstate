@@ -66,8 +66,17 @@ impl<A: AggregateRules> Stream<A> {
     }
 
     /// The newest snapshot's sequence, if the stream has one.
+    /// The newest snapshot's sequence, ignoring any recorded past the head.
+    ///
+    /// A snapshot beyond the head describes state this stream does not have, so
+    /// it cannot vouch for a truncation — replay could never start from it.
     fn latest_snapshot_at(&self) -> Option<Seq> {
-        self.snapshots.iter().map(|s| s.at).max()
+        let head = self.truncated + self.records.len() as u64;
+        self.snapshots
+            .iter()
+            .map(|s| s.at)
+            .filter(|at| at.0 <= head)
+            .max()
     }
 }
 
@@ -197,9 +206,11 @@ impl<A: AggregateRules + Clone> Journal<A> for MemoryJournal<A> {
         // Reading from below the horizon would silently return a *gapped* list:
         // the caller asked to continue from a point whose successors are partly
         // discarded. A subscription handed that list would drop records without
-        // ever seeing an error, so refuse instead — `retained_from` says where a
-        // valid read starts. `None` means "from this stream's start", which is
-        // the horizon, so it is only valid on an untruncated stream.
+        // ever seeing an error, so refuse instead.
+        //
+        // `None` means "from genesis" — it is `after = Seq(0)` — so on a
+        // truncated stream it is itself below the horizon and refused. To read
+        // everything still retained, pass `Some(Seq(retained_from - 1))`.
         let from = after.map_or(0, |s| s.0);
         if from < stream.truncated {
             return Err(JournalError::UnknownSeq {
@@ -302,12 +313,13 @@ impl<A: AggregateRules + Clone> RetainableJournal<A> for MemoryJournal<A> {
             return Err(JournalError::UnknownSeq { at });
         };
 
-        // `at` may sit one past the head (discard everything) but no further.
-        // Without this a snapshot recorded beyond the head would authorise an
-        // arbitrary truncation, and `retained_from` would then disagree with the
-        // `at` that was asked for.
+        // `at` names the first record to keep, so it must be a record sequence:
+        // `Seq(0)` is genesis and keeping "from genesis onward" is not something
+        // this can express — it would report success while `retained_from` still
+        // said `Seq(1)`. The upper bound is one past the head, which means
+        // discard everything.
         let head = stream.truncated + stream.records.len() as u64;
-        if at.0 > head + 1 {
+        if at.0 == 0 || at.0 > head + 1 {
             return Err(JournalError::UnknownSeq { at });
         }
 

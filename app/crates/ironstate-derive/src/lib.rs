@@ -55,11 +55,11 @@ pub fn derive_state_machine(input: TokenStream) -> TokenStream {
 /// }
 /// ```
 ///
-/// # Data-carrying variants must implement `Default`
+/// # Data-carrying fields must implement `Default`
 ///
 /// As with `StateMachine`, variant enumeration builds one representative per
-/// variant and fills its fields with `Default::default()`, so a data-carrying
-/// event variant must implement `Default`.
+/// variant and fills its fields with `Default::default()`, so the payload field
+/// types of a data-carrying event variant must implement `Default`. 
 #[proc_macro_derive(Event, attributes(event_kind, likelihood))]
 pub fn derive_event(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);

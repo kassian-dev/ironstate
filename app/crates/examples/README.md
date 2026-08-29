@@ -13,8 +13,9 @@ Not sure where to start? Pick by what you're building:
 | [`hidden-info`](hidden-info) | full stack | redaction (`#[hidden]`), journaled entropy, a subscription — the integration template | all five: `test!`, `determinism_test!`, `leak_test!`, `journal_contract_test!`, `scenario_test!` | you have per-viewer secrets (a card game, sealed bids) |
 | [`catalog-ctx`](catalog-ctx) | aggregate (adoption) | porting a *borrowing* turn context to the owned `Ctx` (catalog by `Arc`, entropy by `Box`) | `test!`, `determinism_test!`, `journal_contract_test!` | you're adopting ironstate in an engine that threads a `&mut` context |
 | [`async-store`](async-store) | journal adapter (adoption) | making an async store durable via `prepare`/`commit`/`abort`, kept under contract by a sync twin | `journal_contract_test!` | your source of truth is an async database (tokio-postgres, etc.) |
+| [`outbox`](outbox) | journal adapter (adoption) | a journal enlisting in the caller's transaction: `execute_in`/`Pending`, with a read-model write and an outbound job committing alongside the append | its own atomicity tests | a state change must commit together with the work it causes |
 
-The first three mirror the [guide](../../../docs/guide.md); the last two are
+The first three mirror the [guide](../../../docs/guide.md); the last three are
 adoption recipes for real integrations. For what each test layer proves and when
 to reach for it, see [docs/testing.md](../../../docs/testing.md).
 

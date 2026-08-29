@@ -269,7 +269,7 @@ fn property_1_round_trip<J, A>(
     assert_eq!(
         digest128(rebuilt.state()),
         *live_digest,
-        "property 1: replay of the whole log did not reproduce the live digest, case {case}",
+        "[proven] property 1: replay of the whole log did not reproduce the live digest, case {case}",
     );
 }
 
@@ -293,7 +293,7 @@ fn property_1_round_trip_at_each_step<J, A>(
         assert_eq!(
             digest128(rebuilt.state()),
             *live_digest,
-            "property 1b: replay did not reproduce the live digest at {seq:?}, case {case}",
+            "[proven] property 1b: replay did not reproduce the live digest at {seq:?}, case {case}",
         );
     }
 }
@@ -348,7 +348,7 @@ fn property_3_resume_identity<J, A>(
     assert_eq!(
         digest128(resumed.state()),
         digest128(live.state()),
-        "property 3: resume-to-head then handle diverged from the live handle, case {case}",
+        "[proven] property 3: resume-to-head then handle diverged from the live handle, case {case}",
     );
 }
 
@@ -363,12 +363,12 @@ where
         assert_eq!(
             branch.entropy_pos(stream, at).expect("branch position"),
             journal.entropy_pos(stream, at).expect("main position"),
-            "property 4: entropy_pos disagreed at the fork point, case {case}",
+            "[proven] property 4: entropy_pos disagreed at the fork point, case {case}",
         );
         assert_eq!(
             branch.head(stream),
             Some(at),
-            "property 4: a fork's head should sit at the fork point, case {case}",
+            "[proven] property 4: a fork's head should sit at the fork point, case {case}",
         );
     }
 }
@@ -386,7 +386,7 @@ where
     assert_eq!(
         entropy.draws(),
         pos,
-        "property 5: resume must position entropy at the head, not an earlier snapshot, case {case}",
+        "[proven] property 5: resume must position entropy at the head, not an earlier snapshot, case {case}",
     );
 }
 
@@ -417,18 +417,18 @@ where
                 assert_eq!(
                     journal.head(&stream),
                     None,
-                    "property 6: a failed append journaled something, case {case}"
+                    "[proven] property 6: a failed append journaled something, case {case}"
                 );
                 assert_eq!(
                     digest128(aggregate.state()),
                     before,
-                    "property 6: a failed append mutated the state, case {case}",
+                    "[proven] property 6: a failed append mutated the state, case {case}",
                 );
                 let pos = ctx.entropy_mut().map_or(DrawPos(0), |e| e.draws());
                 assert_eq!(
                     pos,
                     DrawPos(0),
-                    "property 6: a failed append left the entropy advanced, case {case}"
+                    "[proven] property 6: a failed append left the entropy advanced, case {case}"
                 );
                 return;
             }
@@ -510,17 +510,17 @@ fn property_10_truncation_preserves_resume<J, A>(
     assert_eq!(
         digest128(after.state()),
         digest128(before.state()),
-        "property 10: truncation changed what the stream resumes to, case {case}",
+        "[proven] property 10: truncation changed what the stream resumes to, case {case}",
     );
     assert_eq!(
         entropy_after.draws(),
         entropy_before.draws(),
-        "property 10: truncation moved the resume entropy position, case {case}",
+        "[proven] property 10: truncation moved the resume entropy position, case {case}",
     );
     assert_eq!(
         journal.retained_from(stream),
         at,
-        "property 10: retained_from must report the new horizon, case {case}",
+        "[proven] property 10: retained_from must report the new horizon, case {case}",
     );
 }
 

@@ -211,7 +211,13 @@ says why it isn't there and what would change that.
   for let-chains — not by the edition (edition 2024 itself needs only 1.85) and
   not by dependencies (they sit at or below 1.85). Raise it only when a feature
   earns it; `resolver = "3"` is MSRV-aware and picks compatible dependency
-  versions on its own.
+  versions on its own. **A crate only advertises its floor when republished.**
+  Lowering it in the workspace manifest changes nothing on crates.io for crates
+  that are not themselves bumped, and release-plz will not bump them — it
+  detects changes per crate directory, and the workspace manifest is in none of
+  them. After a workspace-wide manifest change that consumers can see (the MSRV
+  floor, a license, a category), bump the affected crates by hand so the release
+  workflow publishes them.
 - **Code comments stand on their own** — they never cite spec/doc section
   numbers. Explain the reason in the comment itself.
 - **Crate-README links are absolute, repo-doc links are relative — on purpose.**

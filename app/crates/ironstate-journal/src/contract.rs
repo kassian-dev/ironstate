@@ -178,7 +178,7 @@ where
         let seed = run_seed(seed_base, case);
         let (mut journal, _live, _steps) =
             drive::<J, A>(genesis.clone(), &seed, &mut runner, max_steps);
-        property_11_truncation_preserves_resume(&mut journal, &stream, &seed, case);
+        property_10_truncation_preserves_resume(&mut journal, &stream, &seed, case);
     }
 }
 
@@ -440,13 +440,13 @@ where
     }
 }
 
-/// Property 11 — **truncation preserves resume**. After truncating at a
+/// Property 10 — **truncation preserves resume**. After truncating at a
 /// snapshot boundary, the stream resumes to a bit-identical aggregate and the
 /// same entropy position.
 ///
 /// This is what makes retention safe to offer at all: dropping history must be
 /// invisible to everything downstream of the snapshot it was taken against.
-fn property_11_truncation_preserves_resume<J, A>(
+fn property_10_truncation_preserves_resume<J, A>(
     journal: &mut J,
     stream: &StreamId,
     seed: &Seed,
@@ -487,12 +487,12 @@ fn property_11_truncation_preserves_resume<J, A>(
     for seq in horizon.0..=head.0 {
         let pos = journal.entropy_pos(stream, Seq(seq)).unwrap_or_else(|_| {
             panic!(
-                "[proven] property 11: entropy_pos undefined at retained Seq({seq}), case {case}"
+                "[proven] property 10: entropy_pos undefined at retained Seq({seq}), case {case}"
             )
         });
         assert!(
             pos >= previous,
-            "[proven] property 11: entropy_pos decreased at Seq({seq}), case {case}",
+            "[proven] property 10: entropy_pos decreased at Seq({seq}), case {case}",
         );
         previous = pos;
     }
@@ -502,7 +502,7 @@ fn property_11_truncation_preserves_resume<J, A>(
                 journal.entropy_pos(stream, Seq(gone)),
                 Err(JournalError::UnknownSeq { .. })
             ),
-            "[proven] property 11: truncated Seq({gone}) must be UnknownSeq, case {case}",
+            "[proven] property 10: truncated Seq({gone}) must be UnknownSeq, case {case}",
         );
     }
 
@@ -510,17 +510,17 @@ fn property_11_truncation_preserves_resume<J, A>(
     assert_eq!(
         digest128(after.state()),
         digest128(before.state()),
-        "property 11: truncation changed what the stream resumes to, case {case}",
+        "property 10: truncation changed what the stream resumes to, case {case}",
     );
     assert_eq!(
         entropy_after.draws(),
         entropy_before.draws(),
-        "property 11: truncation moved the resume entropy position, case {case}",
+        "property 10: truncation moved the resume entropy position, case {case}",
     );
     assert_eq!(
         journal.retained_from(stream),
         at,
-        "property 11: retained_from must report the new horizon, case {case}",
+        "property 10: retained_from must report the new horizon, case {case}",
     );
 }
 

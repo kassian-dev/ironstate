@@ -210,7 +210,10 @@ impl<A: AggregateRules + Clone> Journal<A> for MemoryJournal<A> {
         //
         // `None` means "from genesis" — it is `after = Seq(0)` — so on a
         // truncated stream it is itself below the horizon and refused. To read
-        // everything still retained, pass `Some(Seq(retained_from - 1))`.
+        // everything still retained, ask for the record before the horizon:
+        // `events_since(stream, Some(Seq(journal.retained_from(stream).0 - 1)))`,
+        // which is `Seq(0)` on an untruncated stream and so equivalent to `None`
+        // there.
         let from = after.map_or(0, |s| s.0);
         if from < stream.truncated {
             return Err(JournalError::UnknownSeq {

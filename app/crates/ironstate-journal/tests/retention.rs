@@ -474,3 +474,38 @@ fn a_snapshot_past_the_head_cannot_authorise_truncation() {
     }
     assert_eq!(journal.retained_from(&stream()), Seq(1));
 }
+
+/// The documented way to read "everything still retained" — ask for the record
+/// before the horizon — works on a truncated stream and degenerates to `None`
+/// on an untruncated one.
+#[test]
+fn reading_from_the_horizon_is_the_way_to_read_everything_retained() {
+    let (mut journal, _agg, _seed) = driven(6);
+
+    // Untruncated: the horizon expression is Seq(0), equivalent to `None`.
+    let from_horizon = Seq(journal.retained_from(&stream()).0 - 1);
+    assert_eq!(from_horizon, Seq(0));
+    assert_eq!(
+        journal
+            .events_since(&stream(), Some(from_horizon))
+            .unwrap()
+            .len(),
+        journal.events_since(&stream(), None).unwrap().len(),
+        "on an untruncated stream the two must agree",
+    );
+
+    journal.truncate_before(&stream(), Seq(4)).unwrap();
+
+    // Truncated: `None` is refused, the horizon expression still works.
+    assert!(journal.events_since(&stream(), None).is_err());
+    let from_horizon = Seq(journal.retained_from(&stream()).0 - 1);
+    assert_eq!(from_horizon, Seq(3));
+    assert_eq!(
+        journal
+            .events_since(&stream(), Some(from_horizon))
+            .unwrap()
+            .len(),
+        3,
+        "records 4..6 are what remains",
+    );
+}

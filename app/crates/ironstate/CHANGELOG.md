@@ -5,6 +5,15 @@ All notable changes to `ironstate` are recorded here. The format is based on
 entries are maintained by release-plz. This crate is the lifecycle-machine core
 of the [ironstate](https://github.com/kassian-dev/ironstate) family.
 
+## [0.1.4](https://github.com/kassian-dev/ironstate/compare/ironstate-v0.1.3...ironstate-v0.1.4) - 2026-08-29
+
+### Other
+
+- Republished to carry the lowered MSRV floor (1.96 -> 1.88) in its crates.io
+  metadata. No code change: the floor was lowered workspace-wide earlier, but
+  a crate only advertises it when republished, so consumers on 1.88..1.95 were
+  still refused by the resolver.
+
 ## [0.1.3](https://github.com/kassian-dev/ironstate/compare/ironstate-v0.1.2...ironstate-v0.1.3) - 2026-06-20
 
 ### Other

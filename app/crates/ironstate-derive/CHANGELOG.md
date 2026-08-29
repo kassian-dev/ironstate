@@ -5,6 +5,15 @@ on [Keep a Changelog](https://keepachangelog.com/); from the next release on, th
 entries are maintained by release-plz. This crate provides the procedural macros
 for [`ironstate`](https://github.com/kassian-dev/ironstate).
 
+## [0.1.4](https://github.com/kassian-dev/ironstate/compare/ironstate-derive-v0.1.3...ironstate-derive-v0.1.4) - 2026-08-29
+
+### Other
+
+- Republished to carry the lowered MSRV floor (1.96 -> 1.88) in its crates.io
+  metadata. No code change: the floor was lowered workspace-wide earlier, but
+  a crate only advertises it when republished, so consumers on 1.88..1.95 were
+  still refused by the resolver.
+
 ## [0.1.3](https://github.com/kassian-dev/ironstate/compare/ironstate-derive-v0.1.2...ironstate-derive-v0.1.3) - 2026-06-23
 
 ### Other

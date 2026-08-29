@@ -288,9 +288,15 @@ pub trait Journal<A: AggregateRules> {
     /// # Errors
     ///
     /// Returns [`JournalError::UnknownSeq`] if `after` is below the stream's
-    /// retained horizon — including `None`, which means genesis — since the
-    /// result would otherwise have a silent gap in it. Returns
-    /// [`JournalError::Storage`] if the underlying store failed.
+    /// retained horizon, since the result would otherwise have a silent gap in
+    /// it. That is a stale mark on a stream some of whose history has been
+    /// truncated away — a stream that simply has no history yet is not below
+    /// anything, and reads from it (including `None`) succeed with an empty
+    /// list.
+    ///
+    /// `None` means genesis, so on a *truncated* stream it is itself below the
+    /// horizon and refused; ask for the record before the horizon instead.
+    /// Returns [`JournalError::Storage`] if the underlying store failed.
     fn events_since(
         &self,
         stream: &StreamId,

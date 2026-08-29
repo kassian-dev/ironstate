@@ -115,10 +115,19 @@ impl<A: AggregateRules + Clone> MemoryJournal<A> {
     /// The stream's history, seeded with its genesis snapshot if this is the
     /// first time it has been touched.
     fn stream_mut(&mut self, id: &StreamId) -> &mut Stream<A> {
-        let genesis = self.genesis_snapshot();
-        self.streams
-            .entry(id.clone())
-            .or_insert_with(|| Stream::new(genesis))
+        // Destructured so the genesis clone can happen *inside* the vacant arm:
+        // `genesis_snapshot()` borrows all of `self`, which `entry` has already
+        // borrowed mutably, and hoisting it would clone the whole aggregate
+        // state on every append rather than once per stream.
+        let Self { genesis, streams } = self;
+        streams.entry(id.clone()).or_insert_with(|| {
+            Stream::new(Snapshot {
+                state: genesis.clone(),
+                schema_version: 0,
+                at: Seq(0),
+                entropy_pos: DrawPos(0),
+            })
+        })
     }
 }
 

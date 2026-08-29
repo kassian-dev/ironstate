@@ -351,6 +351,10 @@ pub trait RetainableJournal<A: AggregateRules>: Journal<A> {
     /// Every stream this journal holds, so a retention sweep can enumerate what
     /// it might expire.
     ///
+    /// The order is unspecified — treat the result as a set. An adapter is free
+    /// to return rows in whatever order its store yields them, and callers that
+    /// need a stable order should sort.
+    ///
     /// This lives here rather than on [`Journal`] because sweeping is the only
     /// thing that needs it, and on a relational store it is a full-table scan
     /// no ordinary adapter should be made to implement.

@@ -293,7 +293,8 @@ fn reading_from_below_the_horizon_is_refused_not_gapped() {
             other.map(|e| e.len())
         ),
     }
-    // `None` means "from this stream's start", which is now the horizon.
+    // `None` is `after = Seq(0)` — genesis — not "whatever this stream still
+    // has", so after truncation it is itself below the horizon and refused.
     match journal.events_since(&stream(), None) {
         Err(JournalError::UnknownSeq { at }) => assert_eq!(at, Seq(0)),
         other => panic!(
@@ -326,14 +327,16 @@ fn genesis_is_unknown_once_it_is_below_the_horizon() {
 #[test]
 fn a_refused_truncation_does_not_materialise_the_stream() {
     let (mut journal, _agg, _seed) = driven(6);
-    let before = journal.streams().unwrap();
+    let mut before = journal.streams().unwrap();
+    before.sort();
 
     let typo = StreamId::new("typo");
     assert!(journal.truncate_before(&typo, Seq(5)).is_err());
 
+    let mut after = journal.streams().unwrap();
+    after.sort();
     assert_eq!(
-        journal.streams().unwrap(),
-        before,
+        after, before,
         "a refused truncation must not add a phantom stream",
     );
 }

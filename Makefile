@@ -8,7 +8,7 @@ APP := app
 CARGO := cargo
 WASM_TARGET := wasm32-unknown-unknown
 # Mirrors workspace.package.rust-version; the `msrv` target verifies it still builds.
-MSRV := 1.96.0
+MSRV := 1.88.0
 # Wall-clock budget for a `make fuzz` run; CI overrides it.
 FUZZ_SECONDS ?= 180
 # Build target for fuzzing; empty = the host. CI pins the gnu host because the

@@ -13,8 +13,10 @@ as a thin control surface. Specs, `AGENTS.md`, and `docs/` are at the root.
 
 Per maintainer preference `app/rust-toolchain.toml` uses `channel = "stable"`, so
 day-to-day development tracks the latest stable compiler. Edition is 2024; the
-workspace `rust-version` (1.96) is an MSRV floor, not a pin — the `msrv` CI job
-builds the workspace on exactly 1.96.0 so the declared floor stays honest.
+workspace `rust-version` (1.88) is an MSRV floor, not a pin — the `msrv` CI job
+builds the workspace on exactly 1.88.0 so the declared floor stays honest. The
+floor tracks the language features actually used (let-chains), not the edition —
+edition 2024 itself needs only 1.85.
 
 ## F-3 — Event enums require `#[derive(Event)]`
 

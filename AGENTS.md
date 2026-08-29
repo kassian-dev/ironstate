@@ -120,7 +120,14 @@ a stale map (this has been missed before):
 ## Counter-intuitive things (don't "helpfully" undo)
 
 - **Toolchain tracks latest stable** (`app/rust-toolchain.toml`), not a pinned
-  version — by maintainer preference.
+  version — by maintainer preference. That is independent of the **MSRV floor**
+  (`workspace.package.rust-version`), which is a *floor, not a pin*: the `msrv`
+  CI job builds the workspace on exactly that version so the declared floor stays
+  honest. The floor is set by language features actually used — currently 1.88,
+  for let-chains — not by the edition (edition 2024 itself needs only 1.85) and
+  not by dependencies (they sit at or below 1.85). Raise it only when a feature
+  earns it; `resolver = "3"` is MSRV-aware and picks compatible dependency
+  versions on its own.
 - **Code comments stand on their own** — they never cite spec/doc section
   numbers. Explain the reason in the comment itself.
 - **Crate-README links are absolute, repo-doc links are relative — on purpose.**

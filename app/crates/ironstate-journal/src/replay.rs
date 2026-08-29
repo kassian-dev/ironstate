@@ -35,7 +35,7 @@ pub fn replay<A: AggregateRules>(
 /// ```ignore
 /// // On startup: rebuild from the latest snapshot plus the events after it,
 /// // with the entropy stream reopened at the head — ready to `execute` again.
-/// let (aggregate, entropy) = resume(&journal, &seed)?;
+/// let (aggregate, entropy) = resume(&journal, &stream, &seed)?;
 /// ```
 ///
 /// # Errors
@@ -123,7 +123,7 @@ impl std::error::Error for ResumeError {}
 /// failed. Both leave the aggregate and the entropy stream where they started.
 ///
 /// ```ignore
-/// match execute(&mut journal, &mut aggregate, &cmd, &mut ctx) {
+/// match execute(&mut journal, &stream, &mut aggregate, &cmd, &mut ctx) {
 ///     Ok(seq) => { /* durably appended at `seq`; the aggregate is up to date */ }
 ///     Err(ExecuteError::Rejected(why)) => { /* surface the rejection to the caller */ }
 ///     Err(ExecuteError::Journal(err)) => { /* storage failed; nothing changed */ }
@@ -301,9 +301,9 @@ impl<A: AggregateRules> Prepared<A> {
 /// steps around its own awaited append:
 ///
 /// ```ignore
-/// let head = pg.head_pos().await.map_err(ExecuteError::Journal)?;
+/// let head = pg.head_pos(&stream).await.map_err(ExecuteError::Journal)?;
 /// let prepared = prepare(&aggregate, cmd, ctx, head).map_err(ExecuteError::Rejected)?;
-/// match pg.append(prepared.events(), prepared.entropy_pos()).await {
+/// match pg.append(&stream, prepared.events(), prepared.entropy_pos()).await {
 ///     Ok(seq) => { prepared.commit(&mut aggregate); Ok(seq) }
 ///     Err(e)  => { prepared.abort(ctx); Err(ExecuteError::Journal(e)) }
 /// }

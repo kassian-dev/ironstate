@@ -1,6 +1,8 @@
 //! Replay, resume, the persistent `execute` loop, and the audit digest.
 
-use crate::journal::{ExecuteError, Journal, JournalError, Seq, Snapshot, VersionedEvent};
+use crate::journal::{
+    ExecuteError, Journal, JournalError, Seq, Snapshot, StreamId, VersionedEvent,
+};
 use ironstate::RestoreError;
 use ironstate_aggregate::{
     Aggregate, AggregateRules, AuditDigest, CtxEntropy, DrawPos, Rejection, Seed, SeededEntropy,
@@ -42,25 +44,31 @@ pub fn replay<A: AggregateRules>(
 /// genesis snapshot, [`ResumeError::Journal`] if a read failed, or
 /// [`ResumeError::Restore`] if a stored event or snapshot could not be upcast to
 /// the current schema.
-pub fn resume<A, J>(journal: &J, seed: &Seed) -> Result<(Aggregate<A>, SeededEntropy), ResumeError>
+pub fn resume<A, J>(
+    journal: &J,
+    stream: &StreamId,
+    seed: &Seed,
+) -> Result<(Aggregate<A>, SeededEntropy), ResumeError>
 where
     A: AggregateRules,
     J: Journal<A>,
 {
     let snapshot = journal
-        .latest_snapshot()
+        .latest_snapshot(stream)
         .map_err(ResumeError::Journal)?
         .ok_or(ResumeError::NoBase)?;
     let from = snapshot.at;
     let snapshot_pos = snapshot.entropy_pos;
     let events = journal
-        .events_since(Some(from))
+        .events_since(stream, Some(from))
         .map_err(ResumeError::Journal)?;
 
     let aggregate = replay(snapshot, &events).map_err(ResumeError::Restore)?;
 
-    let resume_pos = match journal.head() {
-        Some(head) => journal.entropy_pos(head).map_err(ResumeError::Journal)?,
+    let resume_pos = match journal.head(stream) {
+        Some(head) => journal
+            .entropy_pos(stream, head)
+            .map_err(ResumeError::Journal)?,
         None => snapshot_pos,
     };
     Ok((aggregate, SeededEntropy::at(seed, resume_pos)))
@@ -123,6 +131,7 @@ impl std::error::Error for ResumeError {}
 /// ```
 pub fn execute<A, J>(
     journal: &mut J,
+    stream: &StreamId,
     aggregate: &mut Aggregate<A>,
     cmd: &A::Command,
     ctx: &mut A::Ctx,
@@ -130,16 +139,56 @@ pub fn execute<A, J>(
 where
     A: AggregateRules,
     A::Ctx: CtxEntropy,
+    J: for<'a> Journal<A, Tx<'a> = ()>,
+{
+    let mut unit = ();
+    Ok(execute_in(journal, &mut unit, stream, aggregate, cmd, ctx)?.commit(aggregate))
+}
+
+/// The persistent loop for a journal that enlists in the **caller's** unit of
+/// work: the transactional-outbox shape.
+///
+/// Identical to [`execute`] except that the append joins `tx`, and the
+/// in-memory aggregate is **not** evolved. That last part is the whole point:
+/// if the enclosing transaction is rolled back after the append, evolving
+/// immediately would leave the aggregate silently ahead of the durable log.
+/// So this hands back a [`Pending`], which the caller drives once the
+/// transaction resolves:
+///
+/// ```ignore
+/// let mut tx = pool.begin()?;
+/// let pending = execute_in(&mut journal, &mut tx, &stream, &aggregate, &cmd, &mut ctx)?;
+/// write_read_model(&mut tx, ...)?;   // the caller's other writes
+/// enqueue_notice(&mut tx, ...)?;     // ... in the same transaction
+/// match tx.commit() {
+///     Ok(()) => { let seq = pending.commit(&mut aggregate); }
+///     Err(e) => { pending.abort(&mut ctx); return Err(e.into()); }
+/// }
+/// ```
+///
+/// # Errors
+///
+/// Returns [`ExecuteError::Rejected`] if the command never produced events, or
+/// [`ExecuteError::Journal`] if the append failed. Both leave the aggregate and
+/// the entropy stream where they started.
+pub fn execute_in<A, J>(
+    journal: &mut J,
+    tx: &mut J::Tx<'_>,
+    stream: &StreamId,
+    aggregate: &Aggregate<A>,
+    cmd: &A::Command,
+    ctx: &mut A::Ctx,
+) -> Result<Pending<A>, ExecuteError<A>>
+where
+    A: AggregateRules,
+    A::Ctx: CtxEntropy,
     J: Journal<A>,
 {
-    let head = head_pos(journal).map_err(ExecuteError::Journal)?;
+    let head = head_pos(journal, stream).map_err(ExecuteError::Journal)?;
     let prepared = prepare(aggregate, cmd, ctx, head).map_err(ExecuteError::Rejected)?;
 
-    match journal.append(prepared.events(), prepared.entropy_pos()) {
-        Ok(seq) => {
-            prepared.commit(aggregate);
-            Ok(seq)
-        }
+    match journal.append_in(tx, stream, prepared.events(), prepared.entropy_pos()) {
+        Ok(seq) => Ok(Pending { seq, prepared }),
         Err(error) => {
             prepared.abort(ctx);
             Err(ExecuteError::Journal(error))
@@ -147,15 +196,50 @@ where
     }
 }
 
+/// An append that reached the journal but whose enclosing unit of work has not
+/// resolved yet.
+///
+/// Returned by [`execute_in`]. Call [`commit`](Self::commit) once the caller's
+/// transaction commits, or [`abort`](Self::abort) if it rolls back — until one
+/// of those happens the in-memory aggregate deliberately lags the log.
+#[must_use = "a Pending must be committed or aborted once the enclosing transaction resolves"]
+pub struct Pending<A: AggregateRules> {
+    seq: Seq,
+    prepared: Prepared<A>,
+}
+
+impl<A: AggregateRules> Pending<A> {
+    /// The sequence the append landed at, valid once the transaction commits.
+    pub fn seq(&self) -> Seq {
+        self.seq
+    }
+
+    /// The enclosing transaction committed: advance the aggregate to match the
+    /// durable log, and yield the sequence appended at.
+    pub fn commit(self, aggregate: &mut Aggregate<A>) -> Seq {
+        self.prepared.commit(aggregate);
+        self.seq
+    }
+
+    /// The enclosing transaction rolled back: rewind the entropy stream so
+    /// nothing is left observable. The aggregate was never evolved.
+    pub fn abort(self, ctx: &mut A::Ctx)
+    where
+        A::Ctx: CtxEntropy,
+    {
+        self.prepared.abort(ctx);
+    }
+}
+
 /// The entropy position recorded at the journal head, or `DrawPos(0)` if the
 /// journal is empty. An async store computes the equivalent from its head row.
-fn head_pos<A, J>(journal: &J) -> Result<DrawPos, JournalError>
+fn head_pos<A, J>(journal: &J, stream: &StreamId) -> Result<DrawPos, JournalError>
 where
     A: AggregateRules,
     J: Journal<A>,
 {
-    match journal.head() {
-        Some(head) => journal.entropy_pos(head),
+    match journal.head(stream) {
+        Some(head) => journal.entropy_pos(stream, head),
         None => Ok(DrawPos(0)),
     }
 }

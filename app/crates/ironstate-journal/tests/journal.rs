@@ -8,8 +8,15 @@ use ironstate_aggregate::{
     StableHash, audit_digest,
 };
 use ironstate_journal::{
-    ExecuteError, Journal, MemoryJournal, Seq, Snapshot, execute, prepare, replay_hash, resume,
+    ExecuteError, ForkableJournal, Journal, MemoryJournal, Seq, Snapshot, StreamId, execute,
+    prepare, replay_hash, resume,
 };
+
+/// The stream these tests drive. One journal holds many; these use a single
+/// named instance.
+fn stream() -> StreamId {
+    StreamId::new("test-stream")
+}
 
 #[derive(StateMachine, StableHash, Clone, Debug, PartialEq)]
 #[state_machine(initial = Open, terminal = [Closed])]
@@ -86,8 +93,8 @@ fn genesis() -> Counter {
 /// what `execute` expects of a live stream.
 fn ctx_at_head(journal: &MemoryJournal<Counter>, seed: &Seed) -> OwnedDeterministicCtx<u32> {
     let pos = journal
-        .head()
-        .map_or(DrawPos(0), |h| journal.entropy_pos(h).unwrap());
+        .head(&stream())
+        .map_or(DrawPos(0), |h| journal.entropy_pos(&stream(), h).unwrap());
     OwnedDeterministicCtx {
         entropy: Box::new(SeededEntropy::at(seed, pos)),
         actor: 0,
@@ -103,11 +110,11 @@ fn execute_resume_and_replay_agree() {
 
     for _ in 0..4 {
         let mut ctx = ctx_at_head(&journal, &seed);
-        execute(&mut journal, &mut agg, &Command::Tick, &mut ctx).unwrap();
+        execute(&mut journal, &stream(), &mut agg, &Command::Tick, &mut ctx).unwrap();
     }
 
     // resume rebuilds the exact same state from the journal.
-    let (resumed, _entropy) = resume::<Counter, _>(&journal, &seed).unwrap();
+    let (resumed, _entropy) = resume::<Counter, _>(&journal, &stream(), &seed).unwrap();
     assert_eq!(resumed.state(), agg.state());
 
     // replay_hash over the genesis snapshot + all events matches the live digest.
@@ -117,7 +124,7 @@ fn execute_resume_and_replay_agree() {
         at: Seq(0),
         entropy_pos: DrawPos(0),
     };
-    let events = journal.events_since(None).unwrap();
+    let events = journal.events_since(&stream(), None).unwrap();
     assert_eq!(
         replay_hash(snapshot, &events).unwrap(),
         audit_digest(agg.state())
@@ -131,17 +138,17 @@ fn fork_agrees_on_position_at_the_fork_point() {
     let mut agg = Aggregate::new(genesis()).unwrap();
     for _ in 0..3 {
         let mut ctx = ctx_at_head(&journal, &seed);
-        execute(&mut journal, &mut agg, &Command::Tick, &mut ctx).unwrap();
+        execute(&mut journal, &stream(), &mut agg, &Command::Tick, &mut ctx).unwrap();
     }
 
-    let forked = journal.fork(Seq(2)).unwrap();
+    let forked = journal.fork(&stream(), Seq(2)).unwrap();
     assert_eq!(
-        forked.entropy_pos(Seq(2)).unwrap(),
-        journal.entropy_pos(Seq(2)).unwrap(),
+        forked.entropy_pos(&stream(), Seq(2)).unwrap(),
+        journal.entropy_pos(&stream(), Seq(2)).unwrap(),
     );
     // The fork is independent: appends to one do not change the other.
-    assert_eq!(forked.head(), Some(Seq(2)));
-    assert_eq!(journal.head(), Some(Seq(3)));
+    assert_eq!(forked.head(&stream()), Some(Seq(2)));
+    assert_eq!(journal.head(&stream()), Some(Seq(3)));
 }
 
 /// The `prepare` → `append` → `commit` steps `execute` composes must, driven by
@@ -158,25 +165,37 @@ fn prepare_commit_matches_execute() {
 
     for _ in 0..5 {
         let mut ctx = ctx_at_head(&j_exec, &seed);
-        execute(&mut j_exec, &mut a_exec, &Command::Tick, &mut ctx).unwrap();
+        execute(
+            &mut j_exec,
+            &stream(),
+            &mut a_exec,
+            &Command::Tick,
+            &mut ctx,
+        )
+        .unwrap();
 
         let head = j_steps
-            .head()
-            .map_or(DrawPos(0), |h| j_steps.entropy_pos(h).unwrap());
+            .head(&stream())
+            .map_or(DrawPos(0), |h| j_steps.entropy_pos(&stream(), h).unwrap());
         let mut ctx = ctx_at_head(&j_steps, &seed);
         let prepared = prepare(&a_steps, &Command::Tick, &mut ctx, head).unwrap();
         j_steps
-            .append(prepared.events(), prepared.entropy_pos())
+            .append_in(
+                &mut (),
+                &stream(),
+                prepared.events(),
+                prepared.entropy_pos(),
+            )
             .unwrap();
         prepared.commit(&mut a_steps);
     }
 
     assert_eq!(a_exec.state(), a_steps.state());
-    assert_eq!(j_exec.head(), j_steps.head());
-    let head = j_exec.head().unwrap();
+    assert_eq!(j_exec.head(&stream()), j_steps.head(&stream()));
+    let head = j_exec.head(&stream()).unwrap();
     assert_eq!(
-        j_exec.entropy_pos(head).unwrap(),
-        j_steps.entropy_pos(head).unwrap(),
+        j_exec.entropy_pos(&stream(), head).unwrap(),
+        j_steps.entropy_pos(&stream(), head).unwrap(),
     );
 }
 
@@ -190,13 +209,13 @@ fn prepare_then_abort_leaves_nothing() {
 
     // One successful append, so the head sits past genesis.
     let mut ctx = ctx_at_head(&journal, &seed);
-    execute(&mut journal, &mut agg, &Command::Tick, &mut ctx).unwrap();
+    execute(&mut journal, &stream(), &mut agg, &Command::Tick, &mut ctx).unwrap();
 
-    let head_before = journal.head();
+    let head_before = journal.head(&stream());
     let total_before = agg.state().total;
     let head = journal
-        .head()
-        .map_or(DrawPos(0), |h| journal.entropy_pos(h).unwrap());
+        .head(&stream())
+        .map_or(DrawPos(0), |h| journal.entropy_pos(&stream(), h).unwrap());
 
     // Prepare a Tick (which draws), then abort instead of appending.
     let mut ctx = ctx_at_head(&journal, &seed);
@@ -207,7 +226,7 @@ fn prepare_then_abort_leaves_nothing() {
     // Entropy rewound to head; state and journal unchanged.
     assert_eq!(ctx.entropy.draws(), head);
     assert_eq!(agg.state().total, total_before);
-    assert_eq!(journal.head(), head_before);
+    assert_eq!(journal.head(&stream()), head_before);
 }
 
 #[test]
@@ -217,15 +236,15 @@ fn a_rejected_command_changes_nothing() {
     let mut agg = Aggregate::new(genesis()).unwrap();
 
     let mut ctx = ctx_at_head(&journal, &seed);
-    execute(&mut journal, &mut agg, &Command::Close, &mut ctx).unwrap();
-    let head_before = journal.head();
+    execute(&mut journal, &stream(), &mut agg, &Command::Close, &mut ctx).unwrap();
+    let head_before = journal.head(&stream());
 
     // The phase is now terminal; a further command is rejected and leaves the
     // journal head and the position untouched.
     let mut ctx = ctx_at_head(&journal, &seed);
     let position_before = ctx.entropy.draws();
-    let err = execute(&mut journal, &mut agg, &Command::Tick, &mut ctx).unwrap_err();
+    let err = execute(&mut journal, &stream(), &mut agg, &Command::Tick, &mut ctx).unwrap_err();
     assert!(matches!(err, ExecuteError::Rejected(_)));
-    assert_eq!(journal.head(), head_before);
+    assert_eq!(journal.head(&stream()), head_before);
     assert_eq!(ctx.entropy.draws(), position_before);
 }

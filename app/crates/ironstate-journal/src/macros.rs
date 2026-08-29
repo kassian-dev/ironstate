@@ -1,24 +1,34 @@
 //! The journal verification macros.
 
-/// Generate a `#[test]` that runs the seven-property conformance suite against a
-/// journal adapter for an aggregate.
+/// Generate a `#[test]` that runs the journal conformance suite against an
+/// adapter for an aggregate.
 ///
 /// One argument tests the reference `MemoryJournal`; two arguments test your own
-/// adapter (which must implement `ContractJournal`).
+/// adapter (which must implement `ContractJournal`). Add `forkable` when your
+/// adapter implements [`ForkableJournal`](crate::ForkableJournal), which brings
+/// in the two extra properties that need branching (round-trip and
+/// fork-position equality).
 ///
 /// ```ignore
 /// ironstate_journal::journal_contract_test!(MatchState);                 // the memory journal
 /// ironstate_journal::journal_contract_test!(MyPostgresJournal, MatchState);
+/// ironstate_journal::journal_contract_test!(MyForkingJournal, MatchState, forkable);
 /// ```
 #[macro_export]
 macro_rules! journal_contract_test {
     ($agg:ty) => {
-        $crate::journal_contract_test!($crate::MemoryJournal<$agg>, $agg);
+        $crate::journal_contract_test!($crate::MemoryJournal<$agg>, $agg, forkable);
     };
     ($journal:ty, $agg:ty) => {
         #[test]
         fn journal_contract() {
             $crate::testkit_support::run_contract::<$journal, $agg>(64, 24, 0xC047);
+        }
+    };
+    ($journal:ty, $agg:ty, forkable) => {
+        #[test]
+        fn journal_contract() {
+            $crate::testkit_support::run_contract_forkable::<$journal, $agg>(64, 24, 0xC047);
         }
     };
 }

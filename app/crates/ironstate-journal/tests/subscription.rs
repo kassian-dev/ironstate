@@ -6,7 +6,9 @@ use ironstate::prelude::*;
 use ironstate_aggregate::{
     Aggregate, AggregateRules, LogicalTime, OwnedDeterministicCtx, Seed, SeededEntropy,
 };
-use ironstate_journal::{Delivered, MemoryJournal, React, Seq, StreamId, Subscription};
+use ironstate_journal::{
+    Delivered, MemoryJournal, React, Seq, SourceEvent, StreamId, Subscription,
+};
 
 // --- the source aggregate (only its event type is used here) --------------
 
@@ -144,9 +146,12 @@ fn duplicates_and_reorders_converge_to_exactly_once() {
                    context: &mut OwnedDeterministicCtx<u32>,
                    at: u64| {
         sub.deliver(
-            &stream,
-            Seq(at),
-            &SrcEvent::Pinged,
+            SourceEvent {
+                stream: &stream,
+                at: Seq(at),
+                event: &SrcEvent::Pinged,
+            },
+            &StreamId::new("tally"),
             target,
             context,
             journal,

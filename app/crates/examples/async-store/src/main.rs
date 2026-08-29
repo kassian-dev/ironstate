@@ -1,6 +1,7 @@
 #![doc = include_str!("../README.md")]
 
 use std::borrow::Cow;
+use std::collections::BTreeMap;
 
 use anyhow::{Result, anyhow};
 use ironstate::prelude::*;
@@ -9,12 +10,13 @@ use ironstate_aggregate::{
     OwnedDeterministicCtx, Seed, SeededEntropy, StableHash,
 };
 use ironstate_journal::{
-    ExecuteError, JournalError, ResumeError, Seq, Snapshot, VersionedEvent, prepare, replay,
+    ExecuteError, JournalError, ResumeError, Seq, Snapshot, StreamId, VersionedEvent, prepare,
+    replay,
 };
 // The sync twin and the contract macro that measures it are test-only — production
 // never constructs a `SyncStore`.
 #[cfg(test)]
-use ironstate_journal::{ContractJournal, Journal};
+use ironstate_journal::{ContractJournal, ForkableJournal, Journal};
 use proptest::prelude::*;
 
 // === a minimal async runtime ==============================================
@@ -180,60 +182,84 @@ struct Record<A: AggregateRules> {
 /// genesis snapshot. This stands in for the database table an adapter author
 /// writes; both front ends drive *this*, so proving it once proves it for both.
 struct Log<A: AggregateRules + Clone> {
-    records: Vec<Record<A>>,
-    snapshots: Vec<Snapshot<A>>,
+    genesis: A,
+    streams: BTreeMap<StreamId, Vec<Record<A>>>,
+    snapshots: BTreeMap<StreamId, Vec<Snapshot<A>>>,
 }
 
 impl<A: AggregateRules + Clone> Log<A> {
     fn new(genesis: A) -> Self {
         Self {
-            records: Vec::new(),
-            snapshots: vec![Snapshot {
-                state: genesis,
-                schema_version: 0,
-                at: Seq(0),
-                entropy_pos: DrawPos(0),
-            }],
+            genesis,
+            streams: BTreeMap::new(),
+            snapshots: BTreeMap::new(),
         }
     }
 
-    fn record_at(&self, at: Seq) -> Result<&Record<A>, JournalError> {
-        if at.0 == 0 || at.0 as usize > self.records.len() {
+    fn genesis_snapshot(&self) -> Snapshot<A> {
+        Snapshot {
+            state: self.genesis.clone(),
+            schema_version: 0,
+            at: Seq(0),
+            entropy_pos: DrawPos(0),
+        }
+    }
+
+    fn records(&self, stream: &StreamId) -> &[Record<A>] {
+        self.streams.get(stream).map_or(&[], Vec::as_slice)
+    }
+
+    fn record_at(&self, stream: &StreamId, at: Seq) -> Result<&Record<A>, JournalError> {
+        let records = self.records(stream);
+        if at.0 == 0 || at.0 > records.len() as u64 {
             return Err(JournalError::UnknownSeq { at });
         }
-        Ok(&self.records[(at.0 - 1) as usize])
+        Ok(&records[(at.0 - 1) as usize])
     }
 
     /// Append events and the entropy position as one record — the atomic unit the
     /// `Journal` contract requires (a real adapter does this in one transaction).
-    fn append(&mut self, events: &[A::Event], entropy_pos: DrawPos) -> Result<Seq, JournalError> {
-        self.records.push(Record {
+    /// Records are keyed by stream, so one instance's appends never disturb
+    /// another's.
+    fn append(
+        &mut self,
+        stream: &StreamId,
+        events: &[A::Event],
+        entropy_pos: DrawPos,
+    ) -> Result<Seq, JournalError> {
+        let records = self.streams.entry(stream.clone()).or_default();
+        records.push(Record {
             events: events.to_vec(),
             entropy_pos,
         });
-        Ok(Seq(self.records.len() as u64))
+        Ok(Seq(records.len() as u64))
     }
 
-    fn entropy_pos(&self, at: Seq) -> Result<DrawPos, JournalError> {
+    fn entropy_pos(&self, stream: &StreamId, at: Seq) -> Result<DrawPos, JournalError> {
         if at.0 == 0 {
             return Ok(self
                 .snapshots
-                .iter()
-                .find(|s| s.at == Seq(0))
+                .get(stream)
+                .and_then(|s| s.iter().find(|s| s.at == Seq(0)))
                 .map_or(DrawPos(0), |s| s.entropy_pos));
         }
-        Ok(self.record_at(at)?.entropy_pos)
+        Ok(self.record_at(stream, at)?.entropy_pos)
     }
 
-    fn head(&self) -> Option<Seq> {
-        (!self.records.is_empty()).then_some(Seq(self.records.len() as u64))
+    fn head(&self, stream: &StreamId) -> Option<Seq> {
+        let records = self.records(stream);
+        (!records.is_empty()).then_some(Seq(records.len() as u64))
     }
 
-    fn events_since(&self, after: Option<Seq>) -> Result<Vec<VersionedEvent<A>>, JournalError> {
-        let start = after.map_or(0, |s| s.0 as usize);
+    fn events_since(
+        &self,
+        stream: &StreamId,
+        after: Option<Seq>,
+    ) -> Result<Vec<VersionedEvent<A>>, JournalError> {
+        let start = after.map_or(0, |s| usize::try_from(s.0).unwrap_or(usize::MAX));
         let type_name = Cow::Borrowed(core::any::type_name::<A::Event>());
         Ok(self
-            .records
+            .records(stream)
             .iter()
             .skip(start)
             .flat_map(|record| record.events.iter())
@@ -245,31 +271,44 @@ impl<A: AggregateRules + Clone> Log<A> {
             .collect())
     }
 
-    fn latest_snapshot(&self) -> Result<Option<Snapshot<A>>, JournalError> {
-        Ok(self
-            .snapshots
-            .iter()
-            .max_by_key(|s| s.at)
-            .map(clone_snapshot))
+    fn latest_snapshot(&self, stream: &StreamId) -> Result<Option<Snapshot<A>>, JournalError> {
+        // An untouched stream still has a base to replay from: its genesis.
+        let Some(snapshots) = self.snapshots.get(stream) else {
+            return Ok(Some(self.genesis_snapshot()));
+        };
+        Ok(snapshots.iter().max_by_key(|s| s.at).map(clone_snapshot))
     }
 
-    // `snapshot` and `fork` round out the `Journal` surface the sync twin needs for
-    // the contract; the async front end here never calls them.
+    // `streams`, `snapshot` and `fork` round out the `Journal` surface the sync
+    // twin needs for the contract; the async front end here never calls them.
     #[cfg(test)]
-    fn snapshot(&mut self, snapshot: Snapshot<A>) -> Result<(), JournalError> {
-        self.snapshots.push(snapshot);
+    fn streams(&self) -> Vec<StreamId> {
+        self.streams.keys().cloned().collect()
+    }
+
+    #[cfg(test)]
+    fn snapshot(&mut self, stream: &StreamId, snapshot: Snapshot<A>) -> Result<(), JournalError> {
+        // A stream's snapshot list always starts with its genesis, so a replay
+        // from any stream has a base even if this is its first explicit snapshot.
+        let genesis = self.genesis_snapshot();
+        self.snapshots
+            .entry(stream.clone())
+            .or_insert_with(|| vec![genesis])
+            .push(snapshot);
         Ok(())
     }
 
     #[cfg(test)]
-    fn fork(&self, at: Seq) -> Result<Self, JournalError> {
-        if at.0 as usize > self.records.len() {
+    fn fork(&self, stream: &StreamId, at: Seq) -> Result<Self, JournalError> {
+        let records = self.records(stream);
+        if at.0 > records.len() as u64 {
             return Err(JournalError::UnknownSeq { at });
         }
         let cutoff = at.0 as usize;
-        Ok(Self {
-            records: self
-                .records
+        let mut forked = Self::new(self.genesis.clone());
+        forked.streams.insert(
+            stream.clone(),
+            records
                 .iter()
                 .take(cutoff)
                 .map(|r| Record {
@@ -277,13 +316,18 @@ impl<A: AggregateRules + Clone> Log<A> {
                     entropy_pos: r.entropy_pos,
                 })
                 .collect(),
-            snapshots: self
-                .snapshots
-                .iter()
-                .filter(|s| s.at <= at)
-                .map(clone_snapshot)
-                .collect(),
-        })
+        );
+        if let Some(snapshots) = self.snapshots.get(stream) {
+            forked.snapshots.insert(
+                stream.clone(),
+                snapshots
+                    .iter()
+                    .filter(|s| s.at <= at)
+                    .map(clone_snapshot)
+                    .collect(),
+            );
+        }
+        Ok(forked)
     }
 }
 
@@ -304,6 +348,9 @@ fn clone_snapshot<A: AggregateRules + Clone>(snapshot: &Snapshot<A>) -> Snapshot
 /// exactly why it cannot implement the synchronous [`Journal`](ironstate_journal::Journal) trait.
 struct AsyncStore<A: AggregateRules + Clone> {
     log: Log<A>,
+    /// The aggregate instance this handle serves. A real server resolves one
+    /// per request; the log behind it holds every instance.
+    stream: StreamId,
     fail_next_append: bool,
 }
 
@@ -311,6 +358,7 @@ impl<A: AggregateRules + Clone> AsyncStore<A> {
     fn connect(genesis: A) -> Self {
         Self {
             log: Log::new(genesis),
+            stream: StreamId::new("async-store"),
             fail_next_append: false,
         }
     }
@@ -323,12 +371,12 @@ impl<A: AggregateRules + Clone> AsyncStore<A> {
 
     async fn head(&self) -> Option<Seq> {
         rt::yield_now().await;
-        self.log.head()
+        self.log.head(&self.stream)
     }
 
     async fn entropy_pos(&self, at: Seq) -> Result<DrawPos, JournalError> {
         rt::yield_now().await;
-        self.log.entropy_pos(at)
+        self.log.entropy_pos(&self.stream, at)
     }
 
     /// The entropy position recorded at the head, or `DrawPos(0)` if empty — the
@@ -348,7 +396,7 @@ impl<A: AggregateRules + Clone> AsyncStore<A> {
                 "simulated write failure (the row was not committed)".into(),
             ));
         }
-        self.log.append(events, pos)
+        self.log.append(&self.stream, events, pos)
     }
 
     async fn events_since(
@@ -356,12 +404,12 @@ impl<A: AggregateRules + Clone> AsyncStore<A> {
         after: Option<Seq>,
     ) -> Result<Vec<VersionedEvent<A>>, JournalError> {
         rt::yield_now().await;
-        self.log.events_since(after)
+        self.log.events_since(&self.stream, after)
     }
 
     async fn latest_snapshot(&self) -> Result<Option<Snapshot<A>>, JournalError> {
         rt::yield_now().await;
-        self.log.latest_snapshot()
+        self.log.latest_snapshot(&self.stream)
     }
 }
 
@@ -446,26 +494,50 @@ struct SyncStore<A: AggregateRules + Clone>(Log<A>);
 
 #[cfg(test)]
 impl<A: AggregateRules + Clone> Journal<A> for SyncStore<A> {
-    fn append(&mut self, events: &[A::Event], entropy_pos: DrawPos) -> Result<Seq, JournalError> {
-        self.0.append(events, entropy_pos)
+    type Tx<'a> = ();
+
+    fn append_in(
+        &mut self,
+        _tx: &mut Self::Tx<'_>,
+        stream: &StreamId,
+        events: &[A::Event],
+        entropy_pos: DrawPos,
+    ) -> Result<Seq, JournalError> {
+        self.0.append(stream, events, entropy_pos)
     }
-    fn entropy_pos(&self, at: Seq) -> Result<DrawPos, JournalError> {
-        self.0.entropy_pos(at)
+    fn snapshot_in(
+        &mut self,
+        _tx: &mut Self::Tx<'_>,
+        stream: &StreamId,
+        snapshot: Snapshot<A>,
+    ) -> Result<(), JournalError> {
+        self.0.snapshot(stream, snapshot)
     }
-    fn head(&self) -> Option<Seq> {
-        self.0.head()
+    fn entropy_pos(&self, stream: &StreamId, at: Seq) -> Result<DrawPos, JournalError> {
+        self.0.entropy_pos(stream, at)
     }
-    fn events_since(&self, after: Option<Seq>) -> Result<Vec<VersionedEvent<A>>, JournalError> {
-        self.0.events_since(after)
+    fn head(&self, stream: &StreamId) -> Option<Seq> {
+        self.0.head(stream)
     }
-    fn snapshot(&mut self, snapshot: Snapshot<A>) -> Result<(), JournalError> {
-        self.0.snapshot(snapshot)
+    fn events_since(
+        &self,
+        stream: &StreamId,
+        after: Option<Seq>,
+    ) -> Result<Vec<VersionedEvent<A>>, JournalError> {
+        self.0.events_since(stream, after)
     }
-    fn latest_snapshot(&self) -> Result<Option<Snapshot<A>>, JournalError> {
-        self.0.latest_snapshot()
+    fn latest_snapshot(&self, stream: &StreamId) -> Result<Option<Snapshot<A>>, JournalError> {
+        self.0.latest_snapshot(stream)
     }
-    fn fork(&self, at: Seq) -> Result<Self, JournalError> {
-        Ok(SyncStore(self.0.fork(at)?))
+    fn streams(&self) -> Result<Vec<StreamId>, JournalError> {
+        Ok(self.0.streams())
+    }
+}
+
+#[cfg(test)]
+impl<A: AggregateRules + Clone> ForkableJournal<A> for SyncStore<A> {
+    fn fork(&self, stream: &StreamId, at: Seq) -> Result<Self, JournalError> {
+        Ok(SyncStore(self.0.fork(stream, at)?))
     }
 }
 

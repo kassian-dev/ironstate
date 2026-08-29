@@ -8,8 +8,14 @@ use ironstate_aggregate::{
     Aggregate, AggregateArbitrary, AggregateInvariant, AggregateInvariants, AggregateRules,
     CtxEntropy, EntropySource, LogicalTime, Seed, SeededEntropy, StableHash,
 };
-use ironstate_journal::{ExecuteError, MemoryJournal, execute, resume};
+use ironstate_journal::{ExecuteError, MemoryJournal, StreamId, execute, resume};
 use proptest::prelude::*;
+
+/// The stream this example drives. One journal holds many; this one uses a
+/// single named instance.
+fn stream() -> StreamId {
+    StreamId::new("chest")
+}
 
 /// How many draws an opened chest yields before it must be closed.
 const CAPACITY: u32 = 8;
@@ -363,7 +369,7 @@ fn step(
     cmd: &Command,
     ctx: &mut TurnCtx,
 ) -> Result<()> {
-    execute(journal, chest, cmd, ctx)
+    execute(journal, &stream(), chest, cmd, ctx)
         .map(|_| ())
         .map_err(|e| anyhow!("{e}"))
 }
@@ -425,7 +431,13 @@ fn run_demo() -> Result<()> {
 
     // A gamble draws from the same stream, then the domain rule rejects it (a
     // common, not the jackpot). We do *not* rewind by hand.
-    let lost = execute(&mut journal, &mut chest, &Command::Gamble, &mut ctx);
+    let lost = execute(
+        &mut journal,
+        &stream(),
+        &mut chest,
+        &Command::Gamble,
+        &mut ctx,
+    );
     assert!(
         matches!(lost, Err(ExecuteError::Rejected(_))),
         "the gamble should lose on this seed"
@@ -453,7 +465,8 @@ fn run_demo() -> Result<()> {
 
     // And the whole run rebuilds from the log alone — the owned context changed
     // nothing about determinism.
-    let (resumed, _entropy) = resume::<Chest, _>(&journal, &seed).map_err(|e| anyhow!("{e}"))?;
+    let (resumed, _entropy) =
+        resume::<Chest, _>(&journal, &stream(), &seed).map_err(|e| anyhow!("{e}"))?;
     assert_eq!(
         resumed.state().loot,
         chest.state().loot,
@@ -497,7 +510,13 @@ mod tests {
         let before = ctx.entropy.draws();
         let head_before = chest.state().clone();
 
-        let lost = execute(&mut journal, &mut chest, &Command::Gamble, &mut ctx);
+        let lost = execute(
+            &mut journal,
+            &stream(),
+            &mut chest,
+            &Command::Gamble,
+            &mut ctx,
+        );
         assert!(matches!(lost, Err(ExecuteError::Rejected(_))));
 
         // Entropy rewound, state untouched, nothing journaled.

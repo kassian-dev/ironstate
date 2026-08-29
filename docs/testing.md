@@ -13,7 +13,7 @@ Each layer below states what it proves and where it lives. The done-gate is
 | Property | Invariants hold over randomized sequences | `test!()` |
 | Determinism | Same seed + inputs ⇒ identical digest, byte-for-byte across targets | `determinism_test!()`; CI diffs the digests on x86_64 vs aarch64 |
 | Leak | No covert flow from one principal's hidden state to another's view | `leak_test!()` |
-| Conformance | A journal adapter satisfies the seven contract properties | `journal_contract_test!()` |
+| Conformance | A journal adapter satisfies the contract properties | `journal_contract_test!()` |
 | Entropy contract | A custom `EntropySource` draws in range and covers it, reconstructs its stream on seek, and forks purely | `assert_entropy_contract()` |
 | Simulation | Faults are invisible to outcomes | `scenario_test!()` |
 | Fuzz / hostile input | Garbage is rejected with a typed error, never a panic | `cargo-fuzz` on the versioned-restore decode path; blocks on a crash (uploads the reproducer), every PR |
@@ -32,7 +32,7 @@ and compile-fail are CI/maintainer layers — or that every machine gets for fre
 | `test!` | your machine or aggregate has invariants or non-trivial rules worth exercising over random sequences | a trivial toggle with nothing to assert |
 | `determinism_test!` | your aggregate **draws entropy**, or you rely on replay / audit digests / cross-target reproducibility | no entropy and the state is trivially deterministic |
 | `leak_test!` | you have `#[hidden]` fields or per-viewer redaction (hidden-information domains) | nothing is concealed — there's nothing to leak |
-| `journal_contract_test!` | you **implement your own storage adapter** — it proves the seven durability properties | you use `MemoryJournal` or a provided adapter; it's already covered |
+| `journal_contract_test!` | you **implement your own storage adapter** — it proves the durability properties | you use `MemoryJournal` or a provided adapter; it's already covered |
 | `assert_entropy_contract()` | you **implement your own `EntropySource`**, or override its derived draws — it proves the in-range/covering-draw, seek-reconstruction, and pure-probe contract the determinism guarantee rests on | you use the provided `SeededEntropy` |
 | `scenario_test!` | durability under faults matters and you want crashes / forks / retries proven invisible to the outcome | an in-memory or non-durable use case |
 
@@ -95,16 +95,22 @@ and the rustdoc building under `-D warnings`.
   `leak_test!` catches a hidden value flowing into a public field (while passing
   a clean aggregate).
 
-- **Journal (`ironstate-journal`)** — done: the `Journal` trait (atomic
-  `append` of events + entropy position), `Seq`/`Snapshot`/`VersionedEvent`/
-  `JournalError`/`ExecuteError`, the `MemoryJournal` reference implementation,
-  and `replay`/`resume`/`execute`/`replay_hash`/`fork`. The
-  `journal_contract_test!` seven-property conformance suite passes against the
-  memory journal (round-trip, position totality & monotonicity, resume identity,
-  fork-position equality, snapshot-vs-head discipline, failed-append atomicity,
-  version tagging). `Subscription`/`React` deliver idempotently (duplicates and
-  out-of-order redeliveries dropped, converging to exactly-once). The
-  `Versioned` derive gives events/snapshots a `MigrateFrom` chain.
+- **Journal (`ironstate-journal`)** — done: the `Journal` trait (an atomic
+  `append_in` of events + entropy position, into a caller-supplied `Tx` and a
+  named `StreamId`), `Seq`/`Snapshot`/`VersionedEvent`/`JournalError`/
+  `ExecuteError`, the `MemoryJournal` reference implementation, and
+  `replay`/`resume`/`execute`/`execute_in`/`replay_hash`, with `fork` behind
+  `ForkableJournal`. The `journal_contract_test!` conformance suite passes
+  against the memory journal. Eight properties apply to every adapter —
+  round-trip, position totality & monotonicity, resume identity,
+  snapshot-vs-head discipline, failed-append atomicity, version tagging, stream
+  independence, and out-of-range addressing — with round-trip-at-each-step and
+  fork-position equality added for `ForkableJournal`. Rollback atomicity is
+  covered separately in `tests/transactional.rs`, since it degenerates to
+  nothing when `Tx` is `()`. `Subscription`/`React` deliver idempotently
+  (duplicates and out-of-order redeliveries dropped, converging to
+  exactly-once). The `Versioned` derive gives events/snapshots a `MigrateFrom`
+  chain.
 
 - **Seeded simulation (`ironstate-journal`, feature `sim`)** — done: the public
   testkit (`Fault`, `FaultSchedule`, `FaultInjector`, `ReferenceRun`) and

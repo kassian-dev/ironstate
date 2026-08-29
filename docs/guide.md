@@ -224,12 +224,14 @@ If `decide` needs randomness (shuffle a deck, roll a die), it draws from a journ
 `execute` is the durable version of `handle`: it checks the command, appends the events *and the random-stream position* to the log atomically, then applies them — so the log and memory never disagree, even if the process dies mid-step. `resume` rebuilds an aggregate from the log after a restart, and `replay_hash` produces a tamper-evident digest of the final state anyone holding the events can recompute.
 
 ```rust,ignore
-let seq = execute(&mut journal, &mut account, &command, &mut ctx)?;
+// One journal holds many streams — name the aggregate instance this is.
+let stream = StreamId::new("account-42");
+let seq = execute(&mut journal, &stream, &mut account, &command, &mut ctx)?;
 // …later, after a restart:
-let (account, entropy) = resume(&journal, &seed)?;
+let (account, entropy) = resume(&journal, &stream, &seed)?;
 ```
 
-The one subtlety: replaying events draws no randomness (only `decide` does), so the stream position can't be recomputed from the events — the journal records it with every append. Get this wrong in a storage adapter and replays drift; `journal_contract_test!` exists to catch exactly that, and any adapter you write is measured against it.
+The one subtlety, and the fact that shapes the whole journal: **replaying events draws no randomness.** Only `decide` draws; `evolve` is pure. So after a replay the entropy stream sits where it started, and the position cannot be recovered by re-running history — there is nothing in the events that says how many draws were taken. It has to be *recorded*, atomically, with every append. Get this wrong in a storage adapter and replays drift; `journal_contract_test!` exists to catch exactly that, and any adapter you write is measured against it.
 
 Replaying from the very first event gets slow as the log grows, so the journal also keeps **snapshots**: a periodic copy of the rebuilt state. `resume` starts from the latest snapshot and replays only the events recorded after it, not the whole history.
 
@@ -264,7 +266,7 @@ The same "definition is the test" idea covers the properties that are usually ha
 
 - **If your aggregate draws randomness** (or you rely on replay or audit digests), add `determinism_test!(MatchState)`: it runs the aggregate twice from the same seed and fails if the two runs ever disagree, byte-for-byte — catching sneaky non-determinism like iterating a `HashMap` inside `decide`.
 - **If you have `#[hidden]` state** (per-viewer secrets), add `leak_test!(MatchState, excluding = [PlayCard])`: it checks that nothing one player keeps secret ever shows up in another player's view, across every operation except the ones that legitimately reveal information (which you list).
-- **If you write your own storage adapter**, add `journal_contract_test!(MatchState)`: it holds the adapter to seven properties (round-trip, position discipline, crash atomicity, …). If you use the built-in journal, you already have this.
+- **If you write your own storage adapter**, add `journal_contract_test!(MatchState)`: it holds the adapter to the conformance properties (round-trip, position discipline, stream independence, crash atomicity, …). If you use the built-in journal, you already have this.
 - **If durability under faults matters**, add `scenario_test!(MatchState)`: it drives the whole thing under a seeded storm of injected faults — failed appends, crashes-and-resumes, forks — and checks the faults are invisible to the final outcome.
 
 For the full test taxonomy — including the CI-only fuzz and mutation layers — and a table of when to reach for each macro, see [`testing.md`](testing.md).

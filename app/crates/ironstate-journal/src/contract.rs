@@ -135,7 +135,7 @@ where
         property_7_version_tagging(&journal, &stream, case);
         property_3_resume_identity(&journal, &stream, live, &seed, &mut runner, case);
         property_5_snapshot_vs_head(&journal, &stream, &seed, case);
-        property_10_out_of_range_seq(&journal, &stream, case);
+        property_9_out_of_range_seq(&journal, &stream, case);
 
         property_6_failed_append_atomicity::<J, A>(&seed, &mut runner, case);
         property_8_stream_independence::<J, A>(genesis, &seed, &mut runner, max_steps, case);
@@ -418,13 +418,13 @@ fn property_8_stream_independence<J, A>(
     );
 }
 
-/// Property 10 — **out-of-range addressing**. A `Seq` past the head must yield
+/// Property 9 — **out-of-range addressing**. A `Seq` past the head must yield
 /// [`JournalError::UnknownSeq`], never a different record's position.
 ///
 /// `Seq` is a public tuple struct, so a caller can construct any value. On a
 /// 32-bit target a naive `as usize` cast truncates, which can turn an
 /// out-of-range `Seq` into a valid index — a wrong answer rather than an error.
-fn property_10_out_of_range_seq<J, A>(journal: &J, stream: &StreamId, case: u32)
+fn property_9_out_of_range_seq<J, A>(journal: &J, stream: &StreamId, case: u32)
 where
     A: AggregateRules,
     J: Journal<A>,
@@ -435,14 +435,14 @@ where
             Err(JournalError::UnknownSeq { at }) => assert_eq!(
                 at,
                 Seq(probe),
-                "[proven] property 10: UnknownSeq reported the wrong Seq, case {case}",
+                "[proven] property 9: UnknownSeq reported the wrong Seq, case {case}",
             ),
             Err(other) => panic!(
-                "[proven] property 10: out-of-range Seq({probe}) gave {other:?} \
+                "[proven] property 9: out-of-range Seq({probe}) gave {other:?} \
                  rather than UnknownSeq, case {case}"
             ),
             Ok(pos) => panic!(
-                "[proven] property 10: out-of-range Seq({probe}) returned a position \
+                "[proven] property 9: out-of-range Seq({probe}) returned a position \
                  ({pos:?}) instead of UnknownSeq, case {case}"
             ),
         }

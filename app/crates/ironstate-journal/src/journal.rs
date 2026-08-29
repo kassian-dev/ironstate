@@ -287,7 +287,10 @@ pub trait Journal<A: AggregateRules> {
     ///
     /// # Errors
     ///
-    /// Returns [`JournalError::Storage`] if the underlying store failed.
+    /// Returns [`JournalError::UnknownSeq`] if `after` is below the stream's
+    /// retained horizon — including `None`, which means genesis — since the
+    /// result would otherwise have a silent gap in it. Returns
+    /// [`JournalError::Storage`] if the underlying store failed.
     fn events_since(
         &self,
         stream: &StreamId,
@@ -316,7 +319,10 @@ pub trait ForkableJournal<A: AggregateRules>: Journal<A> {
     ///
     /// # Errors
     ///
-    /// Returns [`JournalError::UnknownSeq`] if `at` is past the stream's head.
+    /// Returns [`JournalError::UnknownSeq`] if `at` is past the stream's head
+    /// or at or below its retained horizon, and
+    /// [`JournalError::NoBaseForFork`] if no snapshot at or below `at`
+    /// survives — the branch would have nothing to replay from.
     fn fork(&self, stream: &StreamId, at: Seq) -> Result<Self, JournalError>
     where
         Self: Sized;
@@ -340,8 +346,12 @@ pub trait RetainableJournal<A: AggregateRules>: Journal<A> {
     ///
     /// # Errors
     ///
-    /// Returns [`JournalError::NoSnapshotForTruncation`] if no snapshot covers
-    /// the retained prefix, or [`JournalError::Storage`] if the store failed.
+    /// Returns [`JournalError::UnknownSeq`] if `at` is not a truncation point
+    /// this stream can express — `Seq(0)` is genesis rather than a record, `at`
+    /// beyond one past the head would discard more than exists, and an unknown
+    /// stream has nothing to truncate. Returns
+    /// [`JournalError::NoSnapshotForTruncation`] if no snapshot covers the
+    /// retained prefix, or [`JournalError::Storage`] if the store failed.
     fn truncate_before(&mut self, stream: &StreamId, at: Seq) -> Result<(), JournalError>;
 
     /// The earliest sequence still retained in `stream` — everything below it

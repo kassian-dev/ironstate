@@ -6,8 +6,18 @@
 /// One argument tests the reference `MemoryJournal`; two arguments test your own
 /// adapter (which must implement `ContractJournal`). Add `forkable` when your
 /// adapter implements [`ForkableJournal`](crate::ForkableJournal), which brings
-/// in the two extra properties that need branching (round-trip and
-/// fork-position equality).
+/// in the two extra properties that need branching: round-trip **at each
+/// recorded step**, and fork-position equality. Round-trip of the whole log is
+/// part of the base contract and runs for every adapter.
+///
+/// # Your journal must have `Tx<'_> = ()`
+///
+/// The suite drives adapters through [`execute`](crate::execute), so it is
+/// bound `for<'a> Journal<A, Tx<'a> = ()>`. A journal whose
+/// [`Tx`](crate::Journal::Tx) is a real database transaction cannot be passed
+/// here as things stand — hold it to the contract with a twin over the same
+/// storage whose `Tx` is `()`, the way the `async-store` example does with its
+/// synchronous twin.
 ///
 /// ```ignore
 /// ironstate_journal::journal_contract_test!(MatchState);                 // the memory journal

@@ -24,6 +24,19 @@ use proptest::strategy::{Strategy, ValueTree};
 use proptest::test_runner::{Config, RngAlgorithm, TestRng, TestRunner};
 
 /// A journal an adapter author can construct freshly for the contract suite.
+///
+/// # Journals with a real transaction
+///
+/// The suite drives adapters through [`execute`], so every entry point is
+/// bound `for<'a> Journal<A, Tx<'a> = ()>`: a journal whose `Tx` is an actual
+/// database transaction cannot be run through
+/// [`journal_contract_test!`](crate::journal_contract_test) as it stands,
+/// because the harness has no way to mint and resolve a unit of work.
+///
+/// Until it does, hold such an adapter to the contract with a twin over the
+/// same storage whose `Tx` is `()` — the pattern the `async-store` example
+/// already uses for a store that cannot implement the synchronous trait at
+/// all. This is a limitation of the harness, not of the adapter.
 pub trait ContractJournal<A: AggregateRules + Clone>: Journal<A> {
     /// A fresh, empty journal seeded with the aggregate's genesis state.
     fn fresh(genesis: A) -> Self;

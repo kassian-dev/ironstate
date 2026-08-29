@@ -27,15 +27,6 @@ impl StreamId {
     pub fn new(id: impl Into<String>) -> Self {
         Self(id.into())
     }
-
-    /// The conventional id for a journal holding a single aggregate instance.
-    pub const MAIN: &'static str = "main";
-
-    /// The stream a single-instance journal uses when the caller names none.
-    #[must_use]
-    pub fn main() -> Self {
-        Self(Self::MAIN.to_owned())
-    }
 }
 
 impl core::fmt::Display for StreamId {
@@ -239,13 +230,6 @@ pub trait Journal<A: AggregateRules> {
     ///
     /// Returns [`JournalError::Storage`] if the underlying store failed.
     fn latest_snapshot(&self, stream: &StreamId) -> Result<Option<Snapshot<A>>, JournalError>;
-
-    /// Every stream this journal holds.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`JournalError::Storage`] if the underlying store failed.
-    fn streams(&self) -> Result<Vec<StreamId>, JournalError>;
 }
 
 /// A journal that can branch a stream's history at a point.

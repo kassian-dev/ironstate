@@ -181,10 +181,6 @@ impl<A: AggregateRules + Clone> Journal<A> for MemoryJournal<A> {
             .max_by_key(|s| s.at)
             .map(clone_snapshot))
     }
-
-    fn streams(&self) -> Result<Vec<StreamId>, JournalError> {
-        Ok(self.streams.keys().cloned().collect())
-    }
 }
 
 impl<A: AggregateRules + Clone> ForkableJournal<A> for MemoryJournal<A> {

@@ -153,9 +153,6 @@ impl<J: Journal<A>, A: AggregateRules> Journal<A> for FaultInjector<J, A> {
     fn latest_snapshot(&self, stream: &StreamId) -> Result<Option<Snapshot<A>>, JournalError> {
         self.inner.latest_snapshot(stream)
     }
-    fn streams(&self) -> Result<Vec<StreamId>, JournalError> {
-        self.inner.streams()
-    }
 }
 
 impl<J: ForkableJournal<A>, A: AggregateRules> ForkableJournal<A> for FaultInjector<J, A> {

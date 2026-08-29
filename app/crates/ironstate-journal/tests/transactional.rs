@@ -211,10 +211,6 @@ impl Journal<Counter> for StagedJournal {
             entropy_pos: DrawPos(0),
         }))
     }
-
-    fn streams(&self) -> Result<Vec<StreamId>, JournalError> {
-        Ok(self.committed.keys().cloned().collect())
-    }
 }
 
 fn ctx(seed: &Seed, pos: DrawPos) -> OwnedDeterministicCtx<u32> {
@@ -333,10 +329,13 @@ fn the_append_and_the_callers_writes_commit_together() {
     let mut journal = StagedJournal::new(genesis());
     let mut agg = Aggregate::new(genesis()).unwrap();
 
-    // Stand-in for a read-model row and an outbound job written by the caller.
-    let mut side_effects: Vec<&str> = Vec::new();
+    // Stand-in for a read-model row and an outbound job. Like the journal's own
+    // records these are staged first and only applied when the transaction
+    // commits, so a rollback must leave `durable` empty.
+    let mut durable: Vec<&str> = Vec::new();
 
     let mut tx = Staged::default();
+    let mut staged: Vec<&str> = Vec::new();
     let mut context = ctx(&seed, DrawPos(0));
     let pending = execute_in(
         &mut journal,
@@ -347,21 +346,24 @@ fn the_append_and_the_callers_writes_commit_together() {
         &mut context,
     )
     .expect("append staged");
-    let staged_side_effects = ["read-model row", "outbound notice"];
+    staged.push("read-model row");
+    staged.push("outbound notice");
 
-    // The caller's transaction fails after both the append and its own writes
+    // The transaction fails after both the append and the caller's own writes
     // were staged; neither may survive.
     drop(tx);
+    staged.clear();
     pending.abort(&mut context);
 
     assert_eq!(journal.head(&stream()), None);
     assert!(
-        side_effects.is_empty(),
+        durable.is_empty(),
         "the caller's writes roll back with the append",
     );
 
     // Now the same sequence, committed.
     let mut tx = Staged::default();
+    let mut staged: Vec<&str> = Vec::new();
     let mut context = ctx(&seed, DrawPos(0));
     let pending = execute_in(
         &mut journal,
@@ -372,14 +374,17 @@ fn the_append_and_the_callers_writes_commit_together() {
         &mut context,
     )
     .expect("append staged");
+    staged.push("read-model row");
+    staged.push("outbound notice");
+
     journal.commit(tx);
-    side_effects.extend(staged_side_effects);
+    durable.append(&mut staged);
     pending.commit(&mut agg);
 
     assert_eq!(journal.head(&stream()), Some(Seq(1)));
     assert_eq!(
-        side_effects.len(),
-        2,
+        durable,
+        ["read-model row", "outbound notice"],
         "the caller's writes land with the append",
     );
 }

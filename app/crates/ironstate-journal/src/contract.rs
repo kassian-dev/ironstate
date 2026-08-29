@@ -3,11 +3,11 @@
 //! Every storage adapter is judged against these, and the reference
 //! `MemoryJournal` must pass them all.
 //!
-//! Eight properties apply to every journal: position totality & monotonicity;
-//! resume identity; snapshot-vs-head discipline; failed-append atomicity;
-//! version tagging; **stream independence**; and **out-of-range addressing**.
-//! Two more — round-trip and fork-position equality — need
-//! [`ForkableJournal`] and so are run only by
+//! Eight properties apply to every journal: round-trip; position totality &
+//! monotonicity; resume identity; snapshot-vs-head discipline; failed-append
+//! atomicity; version tagging; **stream independence**; and **out-of-range
+//! addressing**. Two more — round-trip at each recorded step, and
+//! fork-position equality — need [`ForkableJournal`] and so are run only by
 //! [`run_contract_forkable`].
 
 use crate::journal::{
@@ -129,9 +129,10 @@ where
     for case in 0..cases {
         let genesis = sample(A::initial_state_strategy(), &mut runner);
         let seed = run_seed(seed_base, case);
-        let (journal, live, _steps) = drive::<J, A>(genesis.clone(), &seed, &mut runner, max_steps);
+        let (journal, live, steps) = drive::<J, A>(genesis.clone(), &seed, &mut runner, max_steps);
 
         property_2_positions_total_and_monotonic(&journal, &stream, case);
+        property_1_round_trip(&journal, &stream, &genesis, &steps, case);
         property_7_version_tagging(&journal, &stream, case);
         property_3_resume_identity(&journal, &stream, live, &seed, &mut runner, case);
         property_5_snapshot_vs_head(&journal, &stream, &seed, case);
@@ -163,7 +164,7 @@ where
         let seed = run_seed(seed_base, case);
         let (journal, _live, steps) = drive::<J, A>(genesis.clone(), &seed, &mut runner, max_steps);
 
-        property_1_round_trip(&journal, &stream, &genesis, &steps, case);
+        property_1_round_trip_at_each_step(&journal, &stream, &genesis, &steps, case);
         property_4_fork_position_equality(&journal, &stream, case);
     }
 }
@@ -188,7 +189,37 @@ where
     }
 }
 
+/// Property 1 — **round trip**. Replaying the log reproduces the live state.
+///
+/// The single most important thing a journal does, so it must hold for every
+/// adapter, not only forkable ones: it is expressed against `events_since`
+/// alone. [`property_1_round_trip_at_each_step`] additionally checks every
+/// intermediate point, which does need branching.
 fn property_1_round_trip<J, A>(
+    journal: &J,
+    stream: &StreamId,
+    genesis: &A,
+    steps: &[(Seq, ironstate_aggregate::Digest128)],
+    case: u32,
+) where
+    J: Journal<A>,
+    A: AggregateRules + Clone + StableHash,
+{
+    let Some((_, live_digest)) = steps.last() else {
+        return;
+    };
+    let events = journal.events_since(stream, None).expect("events");
+    let rebuilt = replay(genesis_snapshot(genesis.clone()), &events).expect("replay");
+    assert_eq!(
+        digest128(rebuilt.state()),
+        *live_digest,
+        "property 1: replay of the whole log did not reproduce the live digest, case {case}",
+    );
+}
+
+/// Property 1b — round trip at **every** recorded step, which needs a branch to
+/// isolate each prefix.
+fn property_1_round_trip_at_each_step<J, A>(
     journal: &J,
     stream: &StreamId,
     genesis: &A,
@@ -206,7 +237,7 @@ fn property_1_round_trip<J, A>(
         assert_eq!(
             digest128(rebuilt.state()),
             *live_digest,
-            "property 1: replay did not reproduce the live digest at {seq:?}, case {case}",
+            "property 1b: replay did not reproduce the live digest at {seq:?}, case {case}",
         );
     }
 }
@@ -384,6 +415,10 @@ fn property_8_stream_independence<J, A>(
         .events_since(&untouched, None)
         .expect("events")
         .len();
+    let before_snapshot = journal
+        .latest_snapshot(&untouched)
+        .expect("snapshot")
+        .map(|s| (s.at, s.entropy_pos));
 
     for step in 0..max_steps {
         if aggregate.phase().is_terminal() {
@@ -415,6 +450,14 @@ fn property_8_stream_independence<J, A>(
             .expect("genesis position"),
         DrawPos(0),
         "[proven] property 8: an append to one stream moved another's entropy, case {case}",
+    );
+    assert_eq!(
+        journal
+            .latest_snapshot(&untouched)
+            .expect("snapshot")
+            .map(|s| (s.at, s.entropy_pos)),
+        before_snapshot,
+        "[proven] property 8: an append to one stream moved another's snapshot, case {case}",
     );
 }
 
@@ -503,9 +546,6 @@ impl<A: AggregateRules, J: Journal<A>> Journal<A> for FailNextAppend<J> {
     }
     fn latest_snapshot(&self, stream: &StreamId) -> Result<Option<Snapshot<A>>, JournalError> {
         self.inner.latest_snapshot(stream)
-    }
-    fn streams(&self) -> Result<Vec<StreamId>, JournalError> {
-        self.inner.streams()
     }
 }
 

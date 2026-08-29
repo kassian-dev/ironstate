@@ -279,13 +279,8 @@ impl<A: AggregateRules + Clone> Log<A> {
         Ok(snapshots.iter().max_by_key(|s| s.at).map(clone_snapshot))
     }
 
-    // `streams`, `snapshot` and `fork` round out the `Journal` surface the sync
-    // twin needs for the contract; the async front end here never calls them.
-    #[cfg(test)]
-    fn streams(&self) -> Vec<StreamId> {
-        self.streams.keys().cloned().collect()
-    }
-
+    // `snapshot` and `fork` round out the `Journal` surface the sync twin needs
+    // for the contract; the async front end here never calls them.
     #[cfg(test)]
     fn snapshot(&mut self, stream: &StreamId, snapshot: Snapshot<A>) -> Result<(), JournalError> {
         // A stream's snapshot list always starts with its genesis, so a replay
@@ -528,9 +523,6 @@ impl<A: AggregateRules + Clone> Journal<A> for SyncStore<A> {
     }
     fn latest_snapshot(&self, stream: &StreamId) -> Result<Option<Snapshot<A>>, JournalError> {
         self.0.latest_snapshot(stream)
-    }
-    fn streams(&self) -> Result<Vec<StreamId>, JournalError> {
-        Ok(self.0.streams())
     }
 }
 

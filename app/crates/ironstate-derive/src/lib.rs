@@ -59,7 +59,11 @@ pub fn derive_state_machine(input: TokenStream) -> TokenStream {
 ///
 /// As with `StateMachine`, variant enumeration builds one representative per
 /// variant and fills its fields with `Default::default()`, so the payload field
-/// types of a data-carrying event variant must implement `Default`.
+/// types of a data-carrying event variant must implement `Default` — the event
+/// enum itself never has to. Alternatively, hand-write the [`EventKind`] impl
+/// this derive would have generated.
+///
+/// [`EventKind`]: https://docs.rs/ironstate/latest/ironstate/trait.EventKind.html
 #[proc_macro_derive(Event, attributes(event_kind, likelihood))]
 pub fn derive_event(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);

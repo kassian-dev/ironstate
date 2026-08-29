@@ -97,7 +97,7 @@ You wrote the machine; now check it, from the same definition.
 ironstate::analyze!(Article);
 ```
 
-One requirement comes with this. To walk every state, the derive builds one representative per variant, filling any fields with `Default::default()` — analysis is variant-level, so the field values are never the point. A state or event that **carries data must therefore implement `Default`** (or hand-write the impl the derive would have generated — `StateMachine` for a state, `EventKind` for an event). Fieldless enums, including the phase machines in section 6, need nothing extra.
+One requirement comes with this. To walk every state, the derive builds one representative per variant, filling any data-carrying fields with `Default::default()` — analysis is variant-level, so the field values are never the point. Any data carried by a state or event must therefore be `Default` (i.e., the field types must implement `Default`), or you can hand-write the impl the derive would have generated — `StateMachine` for a state, `EventKind` for an event. Fieldless enums, including the phase machines in section 6, need nothing extra.
 
 `test!` generates thousands of random event sequences and checks, after every step, that your rules hold and nothing panicked. If you declare invariants — properties that must always be true — it checks those too. When something breaks, it shrinks to the shortest failing sequence and is reproducible with a seed.
 

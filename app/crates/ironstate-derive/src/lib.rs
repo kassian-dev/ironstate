@@ -26,12 +26,12 @@ mod statemachine;
 /// enum Article { Draft, Review, Published, Archived }
 /// ```
 ///
-/// # Data-carrying variants must implement `Default`
+/// # Data-carrying fields must implement `Default`
 ///
 /// `analyze!` and `test!` walk every state variant, and the derive builds one
-/// representative per variant to walk. Analysis is variant-level, so a variant's
-/// fields are filled with `Default::default()` — a state that carries data must
-/// therefore implement `Default`, or hand-write the `StateMachine` impl.
+/// representative per variant to walk. Analysis is variant-level, so any
+/// data-carrying fields are filled with `Default::default()` — the payload types
+/// must therefore implement `Default`, or you can hand-write the `StateMachine` impl.
 /// Fieldless enums (including the aggregate tier's phase machines) need nothing
 /// extra.
 #[proc_macro_derive(StateMachine, attributes(state_machine, only_accepts))]

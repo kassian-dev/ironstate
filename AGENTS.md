@@ -224,12 +224,7 @@ says why it isn't there and what would change that.
   `restore` enables `ironstate/restore`).
 - **`anyhow` is for application/binary/test glue only.** Library public errors
   stay typed (`thiserror`-style) so consumers map what/why/fix off variants.
-- **Data-carrying states and events must implement `Default`.** `analyze!` and
-  `test!` walk every variant, and the derives build one representative per
-  variant with `Default::default()` in its fields — analysis is variant-level, so
-  the values are never the point. Fieldless enums (the aggregate tier's phase
-  machines) need nothing. Documented for adopters in `docs/guide.md` and the
-  derive rustdoc.
+- **Data-carrying fields must implement `Default`.** `analyze!` and `test!` walk every variant, and the derives build one representative per variant with `Default::default()` in its fields — analysis is variant-level, so the values are never the point. Fieldless enums (the aggregate tier's phase machines) need nothing. Documented for adopters in `docs/guide.md` and the derive rustdoc.
 - **`resume` returns `ResumeError`, not bare `RestoreError`.** Resuming reads the
   journal (`JournalError`), replays (`RestoreError` on a version mismatch), and
   may find no base snapshot. Core's `RestoreError` is `#[non_exhaustive]` and

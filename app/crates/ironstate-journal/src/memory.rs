@@ -106,13 +106,10 @@ impl<A: AggregateRules + Clone> MemoryJournal<A> {
     /// The stream's history, seeded with its genesis snapshot if this is the
     /// first time it has been touched.
     fn stream_mut(&mut self, id: &StreamId) -> &mut Stream<A> {
-        if !self.streams.contains_key(id) {
-            let seeded = Stream::new(self.genesis_snapshot());
-            self.streams.insert(id.clone(), seeded);
-        }
+        let genesis = self.genesis_snapshot();
         self.streams
-            .get_mut(id)
-            .expect("the stream was just inserted")
+            .entry(id.clone())
+            .or_insert_with(|| Stream::new(genesis))
     }
 }
 
@@ -142,7 +139,9 @@ impl<A: AggregateRules + Clone> Journal<A> for MemoryJournal<A> {
             events: events.to_vec(),
             entropy_pos,
         });
-        Ok(stream.head().expect("a record was just pushed"))
+        // Computed directly rather than via `head()`, which returns an Option
+        // and would need unwrapping inside a public trait method.
+        Ok(Seq(stream.truncated + stream.records.len() as u64))
     }
 
     fn snapshot_in(
@@ -329,10 +328,12 @@ impl<A: AggregateRules + Clone> RetainableJournal<A> for MemoryJournal<A> {
             });
         }
 
-        let stream = self
-            .streams
-            .get_mut(id)
-            .expect("the stream was found immediately above");
+        // Re-fetch mutably now the read-only checks have passed. The lookup
+        // cannot fail here, but saying so with the same error the read phase
+        // would have returned keeps this method panic-free.
+        let Some(stream) = self.streams.get_mut(id) else {
+            return Err(JournalError::UnknownSeq { at });
+        };
 
         let drop_count = at.0.saturating_sub(1).saturating_sub(stream.truncated);
         let drop_count = usize::try_from(drop_count)

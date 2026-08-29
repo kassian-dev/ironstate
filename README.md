@@ -286,7 +286,7 @@ make check    # the done-gate: fmt-check + clippy (-D warnings) + test
 make doc      # build the rustdoc with warnings denied
 make wasm     # cross-target build for wasm32
 make deny     # licenses / advisories / duplicate majors
-make msrv     # build on the minimum supported Rust (1.96)
+make msrv     # build on the minimum supported Rust (1.88)
 make fuzz     # fuzz the restore-decode path (needs nightly + cargo-fuzz)
 make mutants  # mutation-test the code (cargo-mutants)
 ```

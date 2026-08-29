@@ -8,7 +8,9 @@
 /// adapter implements [`ForkableJournal`](crate::ForkableJournal), which brings
 /// in the two extra properties that need branching: round-trip **at each
 /// recorded step**, and fork-position equality. Round-trip of the whole log is
-/// part of the base contract and runs for every adapter.
+/// part of the base contract and runs for every adapter. Add `retainable` when
+/// it implements [`RetainableJournal`](crate::RetainableJournal), which adds
+/// the truncation-preserves-resume property.
 ///
 /// # Your journal must have `Tx<'_> = ()`
 ///
@@ -23,11 +25,13 @@
 /// ironstate_journal::journal_contract_test!(MatchState);                 // the memory journal
 /// ironstate_journal::journal_contract_test!(MyPostgresJournal, MatchState);
 /// ironstate_journal::journal_contract_test!(MyForkingJournal, MatchState, forkable);
+/// ironstate_journal::journal_contract_test!(MyStore, MatchState, forkable, retainable);
+/// // capability markers may be given in either order
 /// ```
 #[macro_export]
 macro_rules! journal_contract_test {
     ($agg:ty) => {
-        $crate::journal_contract_test!($crate::MemoryJournal<$agg>, $agg, forkable);
+        $crate::journal_contract_test!($crate::MemoryJournal<$agg>, $agg, forkable, retainable);
     };
     ($journal:ty, $agg:ty) => {
         #[test]
@@ -40,6 +44,25 @@ macro_rules! journal_contract_test {
         fn journal_contract() {
             $crate::testkit_support::run_contract_forkable::<$journal, $agg>(64, 24, 0xC047);
         }
+    };
+    ($journal:ty, $agg:ty, retainable) => {
+        #[test]
+        fn journal_contract() {
+            $crate::testkit_support::run_contract::<$journal, $agg>(64, 24, 0xC047);
+            $crate::testkit_support::run_contract_retainable::<$journal, $agg>(32, 24, 0xC047);
+        }
+    };
+    ($journal:ty, $agg:ty, forkable, retainable) => {
+        #[test]
+        fn journal_contract() {
+            $crate::testkit_support::run_contract_forkable::<$journal, $agg>(64, 24, 0xC047);
+            $crate::testkit_support::run_contract_retainable::<$journal, $agg>(32, 24, 0xC047);
+        }
+    };
+    // The capabilities are a set, not a sequence — accept either order rather
+    // than failing to match with a macro error.
+    ($journal:ty, $agg:ty, retainable, forkable) => {
+        $crate::journal_contract_test!($journal, $agg, forkable, retainable);
     };
 }
 

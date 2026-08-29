@@ -166,6 +166,20 @@ where
 /// }
 /// ```
 ///
+/// # One call per transaction
+///
+/// This reads the stream head through [`Journal::head`] / [`Journal::entropy_pos`],
+/// which see **committed** state only — they take no `tx`. A second
+/// `execute_in` against the same open transaction would therefore compute its
+/// rewind anchor from the pre-transaction head, and aborting it would rewind the
+/// entropy stream past the first append's draws, leaving a committed record
+/// whose position is ahead of the live stream.
+///
+/// So: one `execute_in` per unit of work, unless your adapter's reads observe
+/// its own uncommitted writes. Batching several commands atomically needs a
+/// journal whose `head`/`entropy_pos` are transaction-aware, which the trait
+/// does not yet express.
+///
 /// # Errors
 ///
 /// Returns [`ExecuteError::Rejected`] if the command never produced events, or

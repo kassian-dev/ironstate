@@ -25,7 +25,7 @@ ironstate = { version = "0.1", path = "crates/ironstate" }
 ironstate-derive = { version = "0.1", path = "crates/ironstate-derive" }
 ironstate-aggregate = { version = "0.1", path = "crates/ironstate-aggregate" }
 ironstate-aggregate-derive = { version = "0.1", path = "crates/ironstate-aggregate-derive" }
-ironstate-journal = { version = "0.2", path = "crates/ironstate-journal" }
+ironstate-journal = { version = "0.3", path = "crates/ironstate-journal" }
 
 # external — pin minor, let patch float
 rustc-stable-hash = "0.1" # rust-lang-maintained engine behind Digest128

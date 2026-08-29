@@ -503,17 +503,15 @@ fn run_demo() -> Result<()> {
     })?;
     let mut subscription: Subscription<MatchState, PlayerProfile> = Subscription::new();
     let mut profile_ctx = ctx(&seed, DrawPos(0), 0);
-    for (i, event) in journal
-        .events_since(&match_stream(), None)
-        .unwrap()
-        .iter()
-        .enumerate()
-    {
+    for event in journal.events_since(&match_stream(), None).unwrap().iter() {
         subscription
             .deliver(
                 SourceEvent {
                     stream: &match_stream(),
-                    at: Seq(i as u64 + 1),
+                    // The record's own Seq, not its index in the flattened list:
+                    // one record can hold several events, so an index would run
+                    // ahead of the head and mark real events as duplicates.
+                    at: event.seq,
                     event: &event.event,
                 },
                 &StreamId::new("profile"),

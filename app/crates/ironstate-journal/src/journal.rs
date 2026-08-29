@@ -65,13 +65,47 @@ pub struct Snapshot<A: AggregateRules> {
 
 /// A stored event tagged with the type and version it was written as, so a
 /// mixed-version stream can be upcast per event at load.
+#[non_exhaustive]
 pub struct VersionedEvent<A: AggregateRules> {
     /// The event payload.
     pub event: A::Event,
+    /// The sequence of the **record** this event was appended in.
+    ///
+    /// One record can hold several events, so this is not a per-event ordinal
+    /// and several returned events may share it. It is the identity a
+    /// [`Subscription`](crate::Subscription) keys its high-water mark by, and
+    /// the only correct thing to pass as
+    /// [`SourceEvent::at`](crate::SourceEvent::at) — a position derived from the
+    /// index within the returned list is wrong as soon as any `decide` emits
+    /// more than one event.
+    pub seq: Seq,
     /// The event type's name when stored.
     pub type_name: Cow<'static, str>,
     /// The event enum's version when stored.
     pub version: u32,
+}
+
+impl<A: AggregateRules> VersionedEvent<A> {
+    /// A stored event, tagged with the record it came from and the schema it
+    /// was written under.
+    ///
+    /// Adapters build these in `events_since`. The struct is
+    /// `#[non_exhaustive]`, so it is constructed through here rather than by
+    /// literal: a future field is then an additive change for every adapter
+    /// instead of a breaking one.
+    pub fn new(
+        event: A::Event,
+        seq: Seq,
+        type_name: impl Into<Cow<'static, str>>,
+        version: u32,
+    ) -> Self {
+        Self {
+            event,
+            seq,
+            type_name: type_name.into(),
+            version,
+        }
+    }
 }
 
 /// A failure from the storage layer.
@@ -85,6 +119,20 @@ pub enum JournalError {
         /// The sequence number that was not found.
         at: Seq,
     },
+    /// A fork was refused: no snapshot at or below the fork point survives, so
+    /// the branch would have no base to replay from.
+    NoBaseForFork {
+        /// The requested fork point.
+        at: Seq,
+    },
+    /// Truncation was refused: it would have discarded records that are still
+    /// needed to replay from the newest snapshot.
+    NoSnapshotForTruncation {
+        /// The sequence truncation was requested before.
+        at: Seq,
+        /// The newest snapshot in the stream, if it has one at all.
+        latest_snapshot: Option<Seq>,
+    },
 }
 
 impl core::fmt::Display for JournalError {
@@ -95,7 +143,27 @@ impl core::fmt::Display for JournalError {
                 f,
                 "no record at sequence {at:?}.\n\
                  The sequence is past the head, or below the earliest retained record.\n\
-                 Check `head()` and the snapshot horizon before addressing a Seq.",
+                 Check `head(stream)` for the upper bound, and — on a journal that \
+                 truncates — `RetainableJournal::retained_from(stream)` for the lower \
+                 one, before addressing a Seq.",
+            ),
+            Self::NoBaseForFork { at } => write!(
+                f,
+                "cannot fork at {at:?}: no snapshot at or below it survives.\n\
+                 Truncation discarded the bases that covered this point, so the branch \
+                 would be unresumable.\n\
+                 Fork at or above the newest snapshot instead, or take one first.",
+            ),
+            Self::NoSnapshotForTruncation {
+                at,
+                latest_snapshot,
+            } => write!(
+                f,
+                "refusing to truncate before {at:?}: the newest snapshot is {latest_snapshot:?}.\n\
+                 Truncating here would discard records still needed to replay from that \
+                 snapshot, leaving the stream unresumable.\n\
+                 Take a snapshot at or after {:?} first, then truncate.",
+                Seq(at.0.saturating_sub(1)),
             ),
         }
     }
@@ -105,7 +173,9 @@ impl std::error::Error for JournalError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Self::Storage(source) => Some(source.as_ref()),
-            Self::UnknownSeq { .. } => None,
+            Self::UnknownSeq { .. }
+            | Self::NoBaseForFork { .. }
+            | Self::NoSnapshotForTruncation { .. } => None,
         }
     }
 }
@@ -217,6 +287,15 @@ pub trait Journal<A: AggregateRules> {
     ///
     /// # Errors
     ///
+    /// Returns [`JournalError::UnknownSeq`] if `after` is below the stream's
+    /// retained horizon, since the result would otherwise have a silent gap in
+    /// it. That is a stale mark on a stream some of whose history has been
+    /// truncated away — a stream that simply has no history yet is not below
+    /// anything, and reads from it (including `None`) succeed with an empty
+    /// list.
+    ///
+    /// `None` means genesis, so on a *truncated* stream it is itself below the
+    /// horizon and refused; ask for the record before the horizon instead.
     /// Returns [`JournalError::Storage`] if the underlying store failed.
     fn events_since(
         &self,
@@ -246,8 +325,58 @@ pub trait ForkableJournal<A: AggregateRules>: Journal<A> {
     ///
     /// # Errors
     ///
-    /// Returns [`JournalError::UnknownSeq`] if `at` is past the stream's head.
+    /// Returns [`JournalError::UnknownSeq`] if `at` is past the stream's head
+    /// or at or below its retained horizon, and
+    /// [`JournalError::NoBaseForFork`] if no snapshot at or below `at`
+    /// survives — the branch would have nothing to replay from.
     fn fork(&self, stream: &StreamId, at: Seq) -> Result<Self, JournalError>
     where
         Self: Sized;
+}
+
+/// A journal that can discard the oldest part of a stream.
+///
+/// Retention is a capability, not a universal contract: an append-only store
+/// may have no way to drop records, and some domains forbid it outright. It is
+/// therefore opt-in — but where it exists, anyone with a retention policy, a
+/// right-to-erasure obligation, or simply a large log needs it, and the
+/// snapshot machinery that makes it safe already exists.
+pub trait RetainableJournal<A: AggregateRules>: Journal<A> {
+    /// Discard every record in `stream` before `at`, keeping `at` onward.
+    ///
+    /// Truncation must be refused unless a snapshot at or after `at - 1`
+    /// exists, since replay resumes from the newest snapshot and would
+    /// otherwise need records that are gone. Sequence numbers of the *retained*
+    /// records never change: a `Seq` is an identity, and subscriptions hold
+    /// high-water marks that refer to it.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`JournalError::UnknownSeq`] if `at` is not a truncation point
+    /// this stream can express — `Seq(0)` is genesis rather than a record, `at`
+    /// beyond one past the head would discard more than exists, and an unknown
+    /// stream has nothing to truncate. Returns
+    /// [`JournalError::NoSnapshotForTruncation`] if no snapshot covers the
+    /// retained prefix, or [`JournalError::Storage`] if the store failed.
+    fn truncate_before(&mut self, stream: &StreamId, at: Seq) -> Result<(), JournalError>;
+
+    /// The earliest sequence still retained in `stream` — everything below it
+    /// has been truncated away.
+    fn retained_from(&self, stream: &StreamId) -> Seq;
+
+    /// Every stream this journal holds, so a retention sweep can enumerate what
+    /// it might expire.
+    ///
+    /// The order is unspecified — treat the result as a set. An adapter is free
+    /// to return rows in whatever order its store yields them, and callers that
+    /// need a stable order should sort.
+    ///
+    /// This lives here rather than on [`Journal`] because sweeping is the only
+    /// thing that needs it, and on a relational store it is a full-table scan
+    /// no ordinary adapter should be made to implement.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`JournalError::Storage`] if the underlying store failed.
+    fn streams(&self) -> Result<Vec<StreamId>, JournalError>;
 }

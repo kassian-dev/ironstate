@@ -97,7 +97,8 @@ mod sim;
 mod subscription;
 
 pub use journal::{
-    ExecuteError, ForkableJournal, Journal, JournalError, Seq, Snapshot, StreamId, VersionedEvent,
+    ExecuteError, ForkableJournal, Journal, JournalError, RetainableJournal, Seq, Snapshot,
+    StreamId, VersionedEvent,
 };
 pub use replay::{
     Pending, Prepared, ResumeError, execute, execute_in, prepare, replay, replay_hash, resume,
@@ -121,6 +122,6 @@ pub mod testkit {
 #[cfg(feature = "sim")]
 #[doc(hidden)]
 pub mod testkit_support {
-    pub use crate::contract::{run_contract, run_contract_forkable};
+    pub use crate::contract::{run_contract, run_contract_forkable, run_contract_retainable};
     pub use crate::sim::run_scenario;
 }

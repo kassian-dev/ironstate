@@ -181,6 +181,23 @@ says why it isn't there and what would change that.
 - **Kani for aggregates** — state-space explosion over struct state needs its own
   design.
 
+- **Hash-chained append / per-entry tamper evidence.** `replay_hash` proves the
+  *outcome* (a terminal `AuditDigest` over final state); it cannot answer "was
+  entry 4,102 altered?". A per-entry chain can. It is deferred, and deliberately
+  being built **downstream first** by the adopter who needs it, for three
+  reasons. The claim is only worth its verification, and a chain is evidence
+  only when its root is *externally anchored* — anchoring is application
+  infrastructure, so ironstate would ship the half that does not deliver the
+  property alone. Of the two known consumers only one has the requirement; the
+  other has no audit machinery and could not consume it anyway. And the obvious
+  shape is wrong: a `Journal` decorator is unreachable from an async adapter, so
+  if this is ever upstreamed it must be **pure functions** —
+  `link_hash(prev, seq, encoded_events, entropy_pos)` plus a `verify_chain` over
+  an iterator — hashing bytes the adapter already persists, per *batch* (one
+  record), and carrying a per-link algorithm tag so the chain survives an
+  algorithm migration. *Activates when a downstream chain has proven the design
+  against a real anchor.*
+
 **Out of scope — downstream, or unneeded.**
 
 - **Storage adapters** (Postgres, SQLite, …) — still downstream, written against

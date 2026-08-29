@@ -11,7 +11,8 @@
 //! [`run_contract_forkable`].
 
 use crate::journal::{
-    ExecuteError, ForkableJournal, Journal, JournalError, Seq, Snapshot, StreamId, VersionedEvent,
+    ExecuteError, ForkableJournal, Journal, JournalError, RetainableJournal, Seq, Snapshot,
+    StreamId, VersionedEvent,
 };
 use crate::memory::MemoryJournal;
 use crate::replay::{execute, replay, resume};
@@ -153,6 +154,29 @@ where
 
         property_6_failed_append_atomicity::<J, A>(&seed, &mut runner, case);
         property_8_stream_independence::<J, A>(genesis, &seed, &mut runner, max_steps, case);
+    }
+}
+
+/// Run the retention property against a journal that can truncate.
+///
+/// # Panics
+///
+/// Panics with a property-numbered message if truncating at a snapshot boundary
+/// changes what the stream resumes to.
+pub fn run_contract_retainable<J, A>(cases: u32, max_steps: usize, seed_base: u64)
+where
+    J: ContractJournal<A> + RetainableJournal<A> + for<'a> Journal<A, Tx<'a> = ()>,
+    A: AggregateArbitrary + StableHash,
+    A::Ctx: CtxEntropy,
+{
+    let stream = test_stream();
+    let mut runner = seeded_runner(seed_base);
+    for case in 0..cases {
+        let genesis = sample(A::initial_state_strategy(), &mut runner);
+        let seed = run_seed(seed_base, case);
+        let (mut journal, _live, _steps) =
+            drive::<J, A>(genesis.clone(), &seed, &mut runner, max_steps);
+        property_11_truncation_preserves_resume(&mut journal, &stream, &seed, case);
     }
 }
 
@@ -395,6 +419,63 @@ where
             Ok(_) => unreachable!("FailNextAppend was armed"),
         }
     }
+}
+
+/// Property 11 — **truncation preserves resume**. After truncating at a
+/// snapshot boundary, the stream resumes to a bit-identical aggregate and the
+/// same entropy position.
+///
+/// This is what makes retention safe to offer at all: dropping history must be
+/// invisible to everything downstream of the snapshot it was taken against.
+fn property_11_truncation_preserves_resume<J, A>(
+    journal: &mut J,
+    stream: &StreamId,
+    seed: &Seed,
+    case: u32,
+) where
+    J: RetainableJournal<A> + for<'a> Journal<A, Tx<'a> = ()>,
+    A: AggregateRules + Clone + StableHash,
+{
+    let Some(head) = journal.head(stream) else {
+        return;
+    };
+    let Ok((before, entropy_before)) = resume::<A, J>(journal, stream, seed) else {
+        return;
+    };
+
+    // Snapshot the resumed state at the head, then drop everything before the
+    // midpoint — a truncation the snapshot fully covers.
+    let snapshot = Snapshot {
+        state: before.state().clone(),
+        schema_version: 0,
+        at: head,
+        entropy_pos: entropy_before.draws(),
+    };
+    journal
+        .snapshot_in(&mut (), stream, snapshot)
+        .expect("snapshot");
+
+    let at = Seq(head.0.div_ceil(2).max(1));
+    journal
+        .truncate_before(stream, at)
+        .expect("truncating below a snapshot taken at the head must be allowed");
+
+    let (after, entropy_after) = resume::<A, J>(journal, stream, seed).expect("resume after");
+    assert_eq!(
+        digest128(after.state()),
+        digest128(before.state()),
+        "property 11: truncation changed what the stream resumes to, case {case}",
+    );
+    assert_eq!(
+        entropy_after.draws(),
+        entropy_before.draws(),
+        "property 11: truncation moved the resume entropy position, case {case}",
+    );
+    assert_eq!(
+        journal.retained_from(stream),
+        at,
+        "property 11: retained_from must report the new horizon, case {case}",
+    );
 }
 
 /// Property 8 — **stream independence**. Appends to one stream never move

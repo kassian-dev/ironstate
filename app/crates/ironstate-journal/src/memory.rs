@@ -2,7 +2,8 @@
 //! judged against by `journal_contract_test!`.
 
 use crate::journal::{
-    ForkableJournal, Journal, JournalError, Seq, Snapshot, StreamId, VersionedEvent,
+    ForkableJournal, Journal, JournalError, RetainableJournal, Seq, Snapshot, StreamId,
+    VersionedEvent,
 };
 use ironstate_aggregate::{AggregateRules, DrawPos};
 use std::borrow::Cow;
@@ -14,21 +15,51 @@ struct Record<A: AggregateRules> {
 }
 
 /// One stream's history: its records and the snapshots taken over them.
+///
+/// `truncated` counts the records dropped off the front, so a retained record's
+/// `Seq` never changes when older ones are discarded — `records[i]` is always
+/// `Seq(truncated + i + 1)`.
 struct Stream<A: AggregateRules> {
     records: Vec<Record<A>>,
     snapshots: Vec<Snapshot<A>>,
+    truncated: u64,
 }
 
 impl<A: AggregateRules> Stream<A> {
+    fn new(genesis: Snapshot<A>) -> Self {
+        Self {
+            records: Vec::new(),
+            snapshots: vec![genesis],
+            truncated: 0,
+        }
+    }
+
+    /// The latest sequence in this stream, or `None` if it holds no records.
+    fn head(&self) -> Option<Seq> {
+        (!self.records.is_empty()).then_some(Seq(self.truncated + self.records.len() as u64))
+    }
+
+    /// The earliest sequence still retained.
+    fn retained_from(&self) -> Seq {
+        Seq(self.truncated + 1)
+    }
+
     fn record_at(&self, at: Seq) -> Result<&Record<A>, JournalError> {
         // Seq is public, so a caller can pass an out-of-range value. Compare in
         // u64 and only cast once it is within bounds — otherwise on a 32-bit
         // target an out-of-range Seq could truncate to a valid index instead of
-        // returning UnknownSeq.
-        if at.0 == 0 || at.0 > self.records.len() as u64 {
+        // returning UnknownSeq. A Seq below the retained horizon is equally
+        // unknown: the record existed once, but this journal can no longer
+        // answer for it.
+        if at.0 <= self.truncated || at.0 > self.truncated + self.records.len() as u64 {
             return Err(JournalError::UnknownSeq { at });
         }
-        Ok(&self.records[(at.0 - 1) as usize])
+        Ok(&self.records[(at.0 - self.truncated - 1) as usize])
+    }
+
+    /// The newest snapshot's sequence, if the stream has one.
+    fn latest_snapshot_at(&self) -> Option<Seq> {
+        self.snapshots.iter().map(|s| s.at).max()
     }
 }
 
@@ -68,10 +99,7 @@ impl<A: AggregateRules + Clone> MemoryJournal<A> {
     /// first time it has been touched.
     fn stream_mut(&mut self, id: &StreamId) -> &mut Stream<A> {
         if !self.streams.contains_key(id) {
-            let seeded = Stream {
-                records: Vec::new(),
-                snapshots: vec![self.genesis_snapshot()],
-            };
+            let seeded = Stream::new(self.genesis_snapshot());
             self.streams.insert(id.clone(), seeded);
         }
         self.streams
@@ -106,7 +134,7 @@ impl<A: AggregateRules + Clone> Journal<A> for MemoryJournal<A> {
             events: events.to_vec(),
             entropy_pos,
         });
-        Ok(Seq(stream.records.len() as u64))
+        Ok(stream.head().expect("a record was just pushed"))
     }
 
     fn snapshot_in(
@@ -140,8 +168,7 @@ impl<A: AggregateRules + Clone> Journal<A> for MemoryJournal<A> {
     }
 
     fn head(&self, stream: &StreamId) -> Option<Seq> {
-        let stream = self.streams.get(stream)?;
-        (!stream.records.is_empty()).then_some(Seq(stream.records.len() as u64))
+        self.streams.get(stream)?.head()
     }
 
     fn events_since(
@@ -154,7 +181,10 @@ impl<A: AggregateRules + Clone> Journal<A> for MemoryJournal<A> {
         };
         // Saturate rather than truncate: an out-of-range `after` (possible only on
         // a 32-bit target, since Seq is public) means "past the end", so skip all.
-        let start = after.map_or(0, |s| usize::try_from(s.0).unwrap_or(usize::MAX));
+        // `after` is an absolute Seq, so discount whatever was truncated away.
+        let start = after.map_or(0, |s| {
+            usize::try_from(s.0.saturating_sub(stream.truncated)).unwrap_or(usize::MAX)
+        });
         let type_name = Cow::Borrowed(core::any::type_name::<A::Event>());
         Ok(stream
             .records
@@ -193,13 +223,14 @@ impl<A: AggregateRules + Clone> ForkableJournal<A> for MemoryJournal<A> {
                 Err(JournalError::UnknownSeq { at })
             };
         };
-        if at.0 > source.records.len() as u64 {
+        if at.0 < source.truncated || at.0 > source.truncated + source.records.len() as u64 {
             return Err(JournalError::UnknownSeq { at });
         }
-        let cutoff = at.0 as usize;
+        let cutoff = (at.0 - source.truncated) as usize;
         forked.streams.insert(
             stream.clone(),
             Stream {
+                truncated: source.truncated,
                 records: source
                     .records
                     .iter()
@@ -218,5 +249,48 @@ impl<A: AggregateRules + Clone> ForkableJournal<A> for MemoryJournal<A> {
             },
         );
         Ok(forked)
+    }
+}
+
+impl<A: AggregateRules + Clone> RetainableJournal<A> for MemoryJournal<A> {
+    fn truncate_before(&mut self, stream: &StreamId, at: Seq) -> Result<(), JournalError> {
+        let stream = self.stream_mut(stream);
+        let latest_snapshot = stream.latest_snapshot_at();
+
+        // Replay resumes from the newest snapshot and reads every record after
+        // it, so the retained prefix must start at or before that point.
+        let needed = at.0.saturating_sub(1);
+        if latest_snapshot.is_none_or(|s| s.0 < needed) {
+            return Err(JournalError::NoSnapshotForTruncation {
+                at,
+                latest_snapshot,
+            });
+        }
+
+        let drop_count = at.0.saturating_sub(1).saturating_sub(stream.truncated);
+        let drop_count = usize::try_from(drop_count)
+            .unwrap_or(usize::MAX)
+            .min(stream.records.len());
+        stream.records.drain(..drop_count);
+        stream.truncated += drop_count as u64;
+
+        // Snapshots below the new horizon are no longer reachable bases, but the
+        // newest one at or before it must survive — it is what replay starts from.
+        if let Some(keep) = stream
+            .snapshots
+            .iter()
+            .filter(|s| s.at.0 <= stream.truncated)
+            .map(|s| s.at)
+            .max()
+        {
+            stream.snapshots.retain(|s| s.at >= keep);
+        }
+        Ok(())
+    }
+
+    fn retained_from(&self, stream: &StreamId) -> Seq {
+        self.streams
+            .get(stream)
+            .map_or(Seq(1), Stream::retained_from)
     }
 }

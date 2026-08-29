@@ -85,6 +85,14 @@ pub enum JournalError {
         /// The sequence number that was not found.
         at: Seq,
     },
+    /// Truncation was refused: it would have discarded records that are still
+    /// needed to replay from the newest snapshot.
+    NoSnapshotForTruncation {
+        /// The sequence truncation was requested before.
+        at: Seq,
+        /// The newest snapshot in the stream, if it has one at all.
+        latest_snapshot: Option<Seq>,
+    },
 }
 
 impl core::fmt::Display for JournalError {
@@ -97,6 +105,17 @@ impl core::fmt::Display for JournalError {
                  The sequence is past the head, or below the earliest retained record.\n\
                  Check `head()` and the snapshot horizon before addressing a Seq.",
             ),
+            Self::NoSnapshotForTruncation {
+                at,
+                latest_snapshot,
+            } => write!(
+                f,
+                "refusing to truncate before {at:?}: the newest snapshot is {latest_snapshot:?}.\n\
+                 Truncating here would discard records still needed to replay from that \
+                 snapshot, leaving the stream unresumable.\n\
+                 Take a snapshot at or after {:?} first, then truncate.",
+                Seq(at.0.saturating_sub(1)),
+            ),
         }
     }
 }
@@ -105,7 +124,7 @@ impl std::error::Error for JournalError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Self::Storage(source) => Some(source.as_ref()),
-            Self::UnknownSeq { .. } => None,
+            Self::UnknownSeq { .. } | Self::NoSnapshotForTruncation { .. } => None,
         }
     }
 }
@@ -250,4 +269,31 @@ pub trait ForkableJournal<A: AggregateRules>: Journal<A> {
     fn fork(&self, stream: &StreamId, at: Seq) -> Result<Self, JournalError>
     where
         Self: Sized;
+}
+
+/// A journal that can discard the oldest part of a stream.
+///
+/// Retention is a capability, not a universal contract: an append-only store
+/// may have no way to drop records, and some domains forbid it outright. It is
+/// therefore opt-in — but where it exists, anyone with a retention policy, a
+/// right-to-erasure obligation, or simply a large log needs it, and the
+/// snapshot machinery that makes it safe already exists.
+pub trait RetainableJournal<A: AggregateRules>: Journal<A> {
+    /// Discard every record in `stream` before `at`, keeping `at` onward.
+    ///
+    /// Truncation must be refused unless a snapshot at or after `at - 1`
+    /// exists, since replay resumes from the newest snapshot and would
+    /// otherwise need records that are gone. Sequence numbers of the *retained*
+    /// records never change: a `Seq` is an identity, and subscriptions hold
+    /// high-water marks that refer to it.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`JournalError::NoSnapshotForTruncation`] if no snapshot covers
+    /// the retained prefix, or [`JournalError::Storage`] if the store failed.
+    fn truncate_before(&mut self, stream: &StreamId, at: Seq) -> Result<(), JournalError>;
+
+    /// The earliest sequence still retained in `stream` — everything below it
+    /// has been truncated away.
+    fn retained_from(&self, stream: &StreamId) -> Seq;
 }

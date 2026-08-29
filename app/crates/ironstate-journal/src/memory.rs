@@ -316,13 +316,17 @@ impl<A: AggregateRules + Clone> RetainableJournal<A> for MemoryJournal<A> {
             return Err(JournalError::UnknownSeq { at });
         };
 
-        // `at` names the first record to keep, so it must be a record sequence:
-        // `Seq(0)` is genesis and keeping "from genesis onward" is not something
-        // this can express — it would report success while `retained_from` still
-        // said `Seq(1)`. The upper bound is one past the head, which means
-        // discard everything.
+        // `at` names the first record to keep, so it must name a record this
+        // stream still has. Anything at or below the horizon cannot be kept
+        // "from `at` onward" — the records are gone — so reporting success
+        // while `retained_from` stayed put would be a silent no-op. That also
+        // covers `Seq(0)`, which is genesis rather than a record. The upper
+        // bound is one past the head, meaning discard everything.
+        //
+        // `at == retained_from` is the one no-op that is honest: the stream is
+        // already truncated to exactly there, so truncation is idempotent.
         let head = stream.truncated + stream.records.len() as u64;
-        if at.0 == 0 || at.0 > head + 1 {
+        if at.0 <= stream.truncated || at.0 > head + 1 {
             return Err(JournalError::UnknownSeq { at });
         }
 

@@ -509,3 +509,32 @@ fn reading_from_the_horizon_is_the_way_to_read_everything_retained() {
         "records 4..6 are what remains",
     );
 }
+
+/// Truncating to a point already below the horizon cannot keep records "from
+/// `at` onward" — they are gone — so it must refuse rather than report success
+/// while `retained_from` stays put. This matches `record_at` and `fork`, which
+/// both treat sequences at or below the horizon as unknown.
+#[test]
+fn truncating_below_an_existing_horizon_is_refused() {
+    let (mut journal, _agg, _seed) = driven(6);
+    journal.truncate_before(&stream(), Seq(4)).unwrap();
+    assert_eq!(journal.retained_from(&stream()), Seq(4));
+
+    for stale in [Seq(1), Seq(2), Seq(3)] {
+        match journal.truncate_before(&stream(), stale) {
+            Err(JournalError::UnknownSeq { at }) => assert_eq!(at, stale),
+            other => panic!("expected UnknownSeq truncating to {stale:?}, got {other:?}"),
+        }
+        assert_eq!(
+            journal.retained_from(&stream()),
+            Seq(4),
+            "a refused truncation must not move the horizon",
+        );
+    }
+
+    // Truncating to exactly the current horizon is the one honest no-op:
+    // the stream is already there, so truncation is idempotent.
+    journal.truncate_before(&stream(), Seq(4)).unwrap();
+    assert_eq!(journal.retained_from(&stream()), Seq(4));
+    assert_eq!(journal.head(&stream()), Some(Seq(6)));
+}

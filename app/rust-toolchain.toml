@@ -1,5 +1,5 @@
 # The workspace tracks the latest stable toolchain (per maintainer preference).
-# edition 2024 requires >= 1.96; MSRV is declared per-crate in Cargo.toml.
+# MSRV (1.88, set by let-chains) is declared per-crate in Cargo.toml and gated in CI.
 [toolchain]
 channel = "stable"
 components = ["rustfmt", "clippy"]

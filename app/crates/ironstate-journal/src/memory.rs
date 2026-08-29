@@ -34,9 +34,17 @@ impl<A: AggregateRules> Stream<A> {
         }
     }
 
-    /// The latest sequence in this stream, or `None` if it holds no records.
+    /// The latest sequence in this stream, or `None` if nothing was ever
+    /// appended to it.
+    ///
+    /// A stream truncated all the way to its head still *has* a head — the
+    /// records are gone, the history is not. Reporting `None` there would tell
+    /// `execute` the stream is empty and rewind the live entropy stream to
+    /// `DrawPos(0)`, so positions would run backwards while sequences ran
+    /// forwards.
     fn head(&self) -> Option<Seq> {
-        (!self.records.is_empty()).then_some(Seq(self.truncated + self.records.len() as u64))
+        let head = self.truncated + self.records.len() as u64;
+        (head > 0).then_some(Seq(head))
     }
 
     /// The earliest sequence still retained.
@@ -156,13 +164,21 @@ impl<A: AggregateRules + Clone> Journal<A> for MemoryJournal<A> {
                 Err(JournalError::UnknownSeq { at })
             };
         };
+        // A snapshot records the position at its own `Seq` and outlives the
+        // record there, so after a truncation it may be the only thing that
+        // still knows it — including at the head of a fully truncated stream.
+        if let Some(snapshot) = stream.snapshots.iter().find(|s| s.at == at) {
+            return Ok(snapshot.entropy_pos);
+        }
         if at.0 == 0 {
-            // Genesis position. (A snapshot may also sit at Seq(0).)
-            return Ok(stream
-                .snapshots
-                .iter()
-                .find(|s| s.at == Seq(0))
-                .map_or(DrawPos(0), |s| s.entropy_pos));
+            // Genesis is below the horizon once anything has been truncated, so
+            // it is as unknown as any other discarded sequence — answering
+            // `DrawPos(0)` here would fabricate a position for history that is
+            // gone.
+            if stream.truncated > 0 {
+                return Err(JournalError::UnknownSeq { at });
+            }
+            return Ok(DrawPos(0));
         }
         Ok(stream.record_at(at)?.entropy_pos)
     }
@@ -179,20 +195,36 @@ impl<A: AggregateRules + Clone> Journal<A> for MemoryJournal<A> {
         let Some(stream) = self.streams.get(stream) else {
             return Ok(Vec::new());
         };
+        // Reading from below the horizon would silently return a *gapped* list:
+        // the caller asked to continue from a point whose successors are partly
+        // discarded. A subscription handed that list would drop records without
+        // ever seeing an error, so refuse instead — `retained_from` says where a
+        // valid read starts. `None` means "from this stream's start", which is
+        // the horizon, so it is only valid on an untruncated stream.
+        let from = after.map_or(0, |s| s.0);
+        if from < stream.truncated {
+            return Err(JournalError::UnknownSeq {
+                at: after.unwrap_or(Seq(0)),
+            });
+        }
         // Saturate rather than truncate: an out-of-range `after` (possible only on
         // a 32-bit target, since Seq is public) means "past the end", so skip all.
-        // `after` is an absolute Seq, so discount whatever was truncated away.
-        let start = after.map_or(0, |s| {
-            usize::try_from(s.0.saturating_sub(stream.truncated)).unwrap_or(usize::MAX)
-        });
+        let start = usize::try_from(from - stream.truncated).unwrap_or(usize::MAX);
         let type_name = Cow::Borrowed(core::any::type_name::<A::Event>());
         Ok(stream
             .records
             .iter()
+            .enumerate()
             .skip(start)
-            .flat_map(|record| record.events.iter())
-            .map(|event| VersionedEvent {
+            .flat_map(|(i, record)| {
+                // Every event in a record carries that record's Seq, not its own
+                // index in the flattened list.
+                let seq = Seq(stream.truncated + i as u64 + 1);
+                record.events.iter().map(move |event| (seq, event))
+            })
+            .map(|(seq, event)| VersionedEvent {
                 event: event.clone(),
+                seq,
                 type_name: type_name.clone(),
                 version: 1,
             })
@@ -232,6 +264,20 @@ impl<A: AggregateRules + Clone> ForkableJournal<A> for MemoryJournal<A> {
         if at.0 > head || below_horizon {
             return Err(JournalError::UnknownSeq { at });
         }
+        // A branch with no snapshot at or below the fork point cannot be
+        // replayed at all. Truncation can discard the bases that covered this
+        // point, so refuse here rather than hand back a journal whose `resume`
+        // fails later with a less specific error.
+        let base: Vec<Snapshot<A>> = source
+            .snapshots
+            .iter()
+            .filter(|s| s.at <= at)
+            .map(clone_snapshot)
+            .collect();
+        if base.is_empty() {
+            return Err(JournalError::NoBaseForFork { at });
+        }
+
         let cutoff = (at.0 - source.truncated) as usize;
         forked.streams.insert(
             stream.clone(),
@@ -246,12 +292,7 @@ impl<A: AggregateRules + Clone> ForkableJournal<A> for MemoryJournal<A> {
                         entropy_pos: r.entropy_pos,
                     })
                     .collect(),
-                snapshots: source
-                    .snapshots
-                    .iter()
-                    .filter(|s| s.at <= at)
-                    .map(clone_snapshot)
-                    .collect(),
+                snapshots: base,
             },
         );
         Ok(forked)
@@ -259,8 +300,23 @@ impl<A: AggregateRules + Clone> ForkableJournal<A> for MemoryJournal<A> {
 }
 
 impl<A: AggregateRules + Clone> RetainableJournal<A> for MemoryJournal<A> {
-    fn truncate_before(&mut self, stream: &StreamId, at: Seq) -> Result<(), JournalError> {
-        let stream = self.stream_mut(stream);
+    fn truncate_before(&mut self, id: &StreamId, at: Seq) -> Result<(), JournalError> {
+        // Look up read-only first: a refused truncation must leave the journal
+        // exactly as it was, and `stream_mut` would create the stream — so a
+        // typo'd id would leave a phantom entry behind that `streams()` reports.
+        let Some(stream) = self.streams.get(id) else {
+            return Err(JournalError::UnknownSeq { at });
+        };
+
+        // `at` may sit one past the head (discard everything) but no further.
+        // Without this a snapshot recorded beyond the head would authorise an
+        // arbitrary truncation, and `retained_from` would then disagree with the
+        // `at` that was asked for.
+        let head = stream.truncated + stream.records.len() as u64;
+        if at.0 > head + 1 {
+            return Err(JournalError::UnknownSeq { at });
+        }
+
         let latest_snapshot = stream.latest_snapshot_at();
 
         // Replay resumes from the newest snapshot and reads every record after
@@ -272,6 +328,11 @@ impl<A: AggregateRules + Clone> RetainableJournal<A> for MemoryJournal<A> {
                 latest_snapshot,
             });
         }
+
+        let stream = self
+            .streams
+            .get_mut(id)
+            .expect("the stream was found immediately above");
 
         let drop_count = at.0.saturating_sub(1).saturating_sub(stream.truncated);
         let drop_count = usize::try_from(drop_count)
@@ -293,5 +354,9 @@ impl<A: AggregateRules + Clone> RetainableJournal<A> for MemoryJournal<A> {
         self.streams
             .get(stream)
             .map_or(Seq(1), Stream::retained_from)
+    }
+
+    fn streams(&self) -> Result<Vec<StreamId>, JournalError> {
+        Ok(self.streams.keys().cloned().collect())
     }
 }

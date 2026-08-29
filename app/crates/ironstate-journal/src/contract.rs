@@ -37,7 +37,9 @@ use proptest::test_runner::{Config, RngAlgorithm, TestRng, TestRunner};
 /// Until it does, hold such an adapter to the contract with a twin over the
 /// same storage whose `Tx` is `()` — the pattern the `async-store` example
 /// already uses for a store that cannot implement the synchronous trait at
-/// all. This is a limitation of the harness, not of the adapter.
+/// all. This is a limitation of the harness, not of the adapter. The rollback
+/// behaviour only a real `Tx` can exhibit is covered separately, in
+/// `tests/transactional.rs`.
 pub trait ContractJournal<A: AggregateRules + Clone>: Journal<A> {
     /// A fresh, empty journal seeded with the aggregate's genesis state.
     fn fresh(genesis: A) -> Self;
@@ -192,15 +194,32 @@ where
     A: AggregateArbitrary + StableHash,
     A::Ctx: CtxEntropy,
 {
-    run_contract::<J, A>(cases, max_steps, seed_base);
-
     let stream = test_stream();
     let mut runner = seeded_runner(seed_base);
     for case in 0..cases {
         let genesis = sample(A::initial_state_strategy(), &mut runner);
         let seed = run_seed(seed_base, case);
-        let (journal, _live, steps) = drive::<J, A>(genesis.clone(), &seed, &mut runner, max_steps);
+        let (journal, live, steps) = drive::<J, A>(genesis.clone(), &seed, &mut runner, max_steps);
 
+        property_2_positions_total_and_monotonic(&journal, &stream, case);
+        property_1_round_trip(&journal, &stream, &genesis, &steps, case);
+        property_7_version_tagging(&journal, &stream, case);
+        property_3_resume_identity(&journal, &stream, live, &seed, &mut runner, case);
+        property_5_snapshot_vs_head(&journal, &stream, &seed, case);
+        property_9_out_of_range_seq(&journal, &stream, case);
+
+        property_6_failed_append_atomicity::<J, A>(&seed, &mut runner, case);
+        property_8_stream_independence::<J, A>(
+            genesis.clone(),
+            &seed,
+            &mut runner,
+            max_steps,
+            case,
+        );
+
+        // The branching properties, in the same pass over the same histories —
+        // driving a second, separately-seeded set would double the cost and make
+        // a fork failure irreproducible against the case just reported.
         property_1_round_trip_at_each_step(&journal, &stream, &genesis, &steps, case);
         property_4_fork_position_equality(&journal, &stream, case);
     }
@@ -459,6 +478,33 @@ fn property_11_truncation_preserves_resume<J, A>(
     journal
         .truncate_before(stream, at)
         .expect("truncating below a snapshot taken at the head must be allowed");
+
+    // Positions stay total and monotonic over what remains, and everything below
+    // the horizon is now out of range — the new failure mode retention adds,
+    // which property 2 and property 10 cannot see on an untruncated journal.
+    let horizon = journal.retained_from(stream);
+    let mut previous = DrawPos(0);
+    for seq in horizon.0..=head.0 {
+        let pos = journal.entropy_pos(stream, Seq(seq)).unwrap_or_else(|_| {
+            panic!(
+                "[proven] property 11: entropy_pos undefined at retained Seq({seq}), case {case}"
+            )
+        });
+        assert!(
+            pos >= previous,
+            "[proven] property 11: entropy_pos decreased at Seq({seq}), case {case}",
+        );
+        previous = pos;
+    }
+    for gone in 1..horizon.0 {
+        assert!(
+            matches!(
+                journal.entropy_pos(stream, Seq(gone)),
+                Err(JournalError::UnknownSeq { .. })
+            ),
+            "[proven] property 11: truncated Seq({gone}) must be UnknownSeq, case {case}",
+        );
+    }
 
     let (after, entropy_after) = resume::<A, J>(journal, stream, seed).expect("resume after");
     assert_eq!(

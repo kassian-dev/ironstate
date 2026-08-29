@@ -261,10 +261,16 @@ impl<A: AggregateRules + Clone> Log<A> {
         Ok(self
             .records(stream)
             .iter()
+            .enumerate()
             .skip(start)
-            .flat_map(|record| record.events.iter())
-            .map(|event| VersionedEvent {
+            .flat_map(|(i, record)| {
+                // The record's Seq, shared by every event it holds.
+                let seq = Seq(i as u64 + 1);
+                record.events.iter().map(move |event| (seq, event))
+            })
+            .map(|(seq, event)| VersionedEvent {
                 event: event.clone(),
+                seq,
                 type_name: type_name.clone(),
                 version: 1,
             })

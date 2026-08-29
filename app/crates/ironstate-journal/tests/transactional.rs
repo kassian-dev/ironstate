@@ -190,10 +190,15 @@ impl Journal<Counter> for StagedJournal {
         Ok(self
             .records(stream)
             .iter()
+            .enumerate()
             .skip(start)
-            .flat_map(|r| r.events.iter())
-            .map(|event| VersionedEvent {
+            .flat_map(|(i, r)| {
+                let seq = Seq(i as u64 + 1);
+                r.events.iter().map(move |event| (seq, event))
+            })
+            .map(|(seq, event)| VersionedEvent {
                 event: event.clone(),
+                seq,
                 type_name: type_name.clone(),
                 version: 1,
             })

@@ -68,6 +68,16 @@ pub struct Snapshot<A: AggregateRules> {
 pub struct VersionedEvent<A: AggregateRules> {
     /// The event payload.
     pub event: A::Event,
+    /// The sequence of the **record** this event was appended in.
+    ///
+    /// One record can hold several events, so this is not a per-event ordinal
+    /// and several returned events may share it. It is the identity a
+    /// [`Subscription`](crate::Subscription) keys its high-water mark by, and
+    /// the only correct thing to pass as
+    /// [`SourceEvent::at`](crate::SourceEvent::at) — a position derived from the
+    /// index within the returned list is wrong as soon as any `decide` emits
+    /// more than one event.
+    pub seq: Seq,
     /// The event type's name when stored.
     pub type_name: Cow<'static, str>,
     /// The event enum's version when stored.
@@ -83,6 +93,12 @@ pub enum JournalError {
     /// No record exists at the requested sequence number.
     UnknownSeq {
         /// The sequence number that was not found.
+        at: Seq,
+    },
+    /// A fork was refused: no snapshot at or below the fork point survives, so
+    /// the branch would have no base to replay from.
+    NoBaseForFork {
+        /// The requested fork point.
         at: Seq,
     },
     /// Truncation was refused: it would have discarded records that are still
@@ -105,6 +121,13 @@ impl core::fmt::Display for JournalError {
                  The sequence is past the head, or below the earliest retained record.\n\
                  Check `head()` and the snapshot horizon before addressing a Seq.",
             ),
+            Self::NoBaseForFork { at } => write!(
+                f,
+                "cannot fork at {at:?}: no snapshot at or below it survives.\n\
+                 Truncation discarded the bases that covered this point, so the branch \
+                 would be unresumable.\n\
+                 Fork at or above the newest snapshot instead, or take one first.",
+            ),
             Self::NoSnapshotForTruncation {
                 at,
                 latest_snapshot,
@@ -124,7 +147,9 @@ impl std::error::Error for JournalError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Self::Storage(source) => Some(source.as_ref()),
-            Self::UnknownSeq { .. } | Self::NoSnapshotForTruncation { .. } => None,
+            Self::UnknownSeq { .. }
+            | Self::NoBaseForFork { .. }
+            | Self::NoSnapshotForTruncation { .. } => None,
         }
     }
 }
@@ -296,4 +321,16 @@ pub trait RetainableJournal<A: AggregateRules>: Journal<A> {
     /// The earliest sequence still retained in `stream` — everything below it
     /// has been truncated away.
     fn retained_from(&self, stream: &StreamId) -> Seq;
+
+    /// Every stream this journal holds, so a retention sweep can enumerate what
+    /// it might expire.
+    ///
+    /// This lives here rather than on [`Journal`] because sweeping is the only
+    /// thing that needs it, and on a relational store it is a full-table scan
+    /// no ordinary adapter should be made to implement.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`JournalError::Storage`] if the underlying store failed.
+    fn streams(&self) -> Result<Vec<StreamId>, JournalError>;
 }

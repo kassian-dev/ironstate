@@ -78,6 +78,17 @@ impl<F: AggregateRules, T: React<F>> Subscription<F, T> {
     /// The source stream and `target_stream` are independent: the first names the
     /// history being read, the second the history being written.
     ///
+    /// # Delivery is idempotent, not atomic
+    ///
+    /// Each command is `execute`d separately. If `react` returns several and a
+    /// later one fails, the earlier ones are already durable while the mark
+    /// stays put — so redelivery re-runs `react` and re-applies them. Keep
+    /// `react` emitting commands that are safe to re-apply, or have it emit one.
+    ///
+    /// Making the whole batch atomic needs [`execute_in`](crate::execute_in) and
+    /// a journal with a real [`Journal::Tx`], which this method cannot use: it
+    /// is bound to `Tx<'a> = ()`.
+    ///
     /// # Errors
     ///
     /// Returns whatever [`execute`] returned for the first command that failed;

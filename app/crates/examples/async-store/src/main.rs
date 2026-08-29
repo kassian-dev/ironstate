@@ -268,12 +268,7 @@ impl<A: AggregateRules + Clone> Log<A> {
                 let seq = Seq(i as u64 + 1);
                 record.events.iter().map(move |event| (seq, event))
             })
-            .map(|(seq, event)| VersionedEvent {
-                event: event.clone(),
-                seq,
-                type_name: type_name.clone(),
-                version: 1,
-            })
+            .map(|(seq, event)| VersionedEvent::new(event.clone(), seq, type_name.clone(), 1))
             .collect())
     }
 

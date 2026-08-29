@@ -65,6 +65,7 @@ pub struct Snapshot<A: AggregateRules> {
 
 /// A stored event tagged with the type and version it was written as, so a
 /// mixed-version stream can be upcast per event at load.
+#[non_exhaustive]
 pub struct VersionedEvent<A: AggregateRules> {
     /// The event payload.
     pub event: A::Event,
@@ -82,6 +83,29 @@ pub struct VersionedEvent<A: AggregateRules> {
     pub type_name: Cow<'static, str>,
     /// The event enum's version when stored.
     pub version: u32,
+}
+
+impl<A: AggregateRules> VersionedEvent<A> {
+    /// A stored event, tagged with the record it came from and the schema it
+    /// was written under.
+    ///
+    /// Adapters build these in `events_since`. The struct is
+    /// `#[non_exhaustive]`, so it is constructed through here rather than by
+    /// literal: a future field is then an additive change for every adapter
+    /// instead of a breaking one.
+    pub fn new(
+        event: A::Event,
+        seq: Seq,
+        type_name: impl Into<Cow<'static, str>>,
+        version: u32,
+    ) -> Self {
+        Self {
+            event,
+            seq,
+            type_name: type_name.into(),
+            version,
+        }
+    }
 }
 
 /// A failure from the storage layer.
@@ -119,7 +143,9 @@ impl core::fmt::Display for JournalError {
                 f,
                 "no record at sequence {at:?}.\n\
                  The sequence is past the head, or below the earliest retained record.\n\
-                 Check `head()` and the snapshot horizon before addressing a Seq.",
+                 Check `head(stream)` for the upper bound, and — on a journal that \
+                 truncates — `RetainableJournal::retained_from(stream)` for the lower \
+                 one, before addressing a Seq.",
             ),
             Self::NoBaseForFork { at } => write!(
                 f,

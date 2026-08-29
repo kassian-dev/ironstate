@@ -64,7 +64,7 @@ construction) or `[sampled]` (observed over generated input):
 - **`test!`** — randomized property testing against declared invariants.
 - **`determinism_test!`** — two identically-seeded runs must agree digest-for-digest.
 - **`leak_test!`** — no covert flow from one principal's hidden state to another's view.
-- **`journal_contract_test!`** — a journal adapter satisfies the seven contract properties.
+- **`journal_contract_test!`** — a journal adapter satisfies the contract properties.
 - **`scenario_test!`** — seeded whole-tier fault simulation; faults invisible to outcomes.
 
 ## The determinism contract (conditions are executable)

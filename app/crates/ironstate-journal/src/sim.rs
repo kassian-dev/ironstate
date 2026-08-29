@@ -6,7 +6,9 @@
 //! fault-free [`ReferenceRun`] over the same commands. The pieces are public so
 //! a consumer's own deterministic-simulation harness can reuse them.
 
-use crate::journal::{ExecuteError, Journal, JournalError, Seq, Snapshot, VersionedEvent};
+use crate::journal::{
+    ExecuteError, ForkableJournal, Journal, JournalError, Seq, Snapshot, StreamId, VersionedEvent,
+};
 use crate::memory::MemoryJournal;
 use crate::replay::{execute, resume};
 use ironstate::StateMachine;
@@ -112,37 +114,56 @@ impl<J: Journal<A>, A: AggregateRules> FaultInjector<J, A> {
 }
 
 impl<J: Journal<A>, A: AggregateRules> Journal<A> for FaultInjector<J, A> {
-    fn append(&mut self, events: &[A::Event], entropy_pos: DrawPos) -> Result<Seq, JournalError> {
+    type Tx<'a> = J::Tx<'a>;
+
+    fn append_in(
+        &mut self,
+        tx: &mut Self::Tx<'_>,
+        stream: &StreamId,
+        events: &[A::Event],
+        entropy_pos: DrawPos,
+    ) -> Result<Seq, JournalError> {
         if self.fail_next_append {
             self.fail_next_append = false;
             return Err(JournalError::Storage("injected append failure".into()));
         }
-        self.inner.append(events, entropy_pos)
+        self.inner.append_in(tx, stream, events, entropy_pos)
     }
-    fn entropy_pos(&self, at: Seq) -> Result<DrawPos, JournalError> {
-        self.inner.entropy_pos(at)
+    fn snapshot_in(
+        &mut self,
+        tx: &mut Self::Tx<'_>,
+        stream: &StreamId,
+        snapshot: Snapshot<A>,
+    ) -> Result<(), JournalError> {
+        self.inner.snapshot_in(tx, stream, snapshot)
     }
-    fn head(&self) -> Option<Seq> {
-        self.inner.head()
+    fn entropy_pos(&self, stream: &StreamId, at: Seq) -> Result<DrawPos, JournalError> {
+        self.inner.entropy_pos(stream, at)
     }
-    fn events_since(&self, after: Option<Seq>) -> Result<Vec<VersionedEvent<A>>, JournalError> {
-        self.inner.events_since(after)
+    fn head(&self, stream: &StreamId) -> Option<Seq> {
+        self.inner.head(stream)
     }
-    fn snapshot(&mut self, snapshot: Snapshot<A>) -> Result<(), JournalError> {
-        self.inner.snapshot(snapshot)
+    fn events_since(
+        &self,
+        stream: &StreamId,
+        after: Option<Seq>,
+    ) -> Result<Vec<VersionedEvent<A>>, JournalError> {
+        self.inner.events_since(stream, after)
     }
-    fn latest_snapshot(&self) -> Result<Option<Snapshot<A>>, JournalError> {
-        self.inner.latest_snapshot()
+    fn latest_snapshot(&self, stream: &StreamId) -> Result<Option<Snapshot<A>>, JournalError> {
+        self.inner.latest_snapshot(stream)
     }
-    fn fork(&self, at: Seq) -> Result<Self, JournalError> {
+}
+
+impl<J: ForkableJournal<A>, A: AggregateRules> ForkableJournal<A> for FaultInjector<J, A> {
+    fn fork(&self, stream: &StreamId, at: Seq) -> Result<Self, JournalError> {
         Ok(FaultInjector {
-            inner: self.inner.fork(at)?,
+            inner: self.inner.fork(stream, at)?,
             fail_next_append: false,
             _marker: core::marker::PhantomData,
         })
     }
 }
-
 /// A fault-free run over a recorded command stream, the oracle a faulted run is
 /// compared against.
 pub struct ReferenceRun<A: AggregateArbitrary> {
@@ -157,6 +178,7 @@ where
     /// Sample and run a command stream fault-free, recording the commands (so a
     /// faulted run can replay exactly them) and the final state digest.
     fn record(genesis: A, seed: &Seed, runner: &mut TestRunner, max_steps: usize) -> Self {
+        let stream = StreamId::new("scenario");
         let mut journal = MemoryJournal::new(genesis.clone());
         let mut aggregate = Aggregate::new(genesis).expect("initial");
         let mut commands = Vec::new();
@@ -165,7 +187,7 @@ where
                 break;
             }
             let cmd = sample(A::command_strategy(aggregate.state()), runner);
-            exec_step(&mut journal, &mut aggregate, &cmd, seed).ok();
+            exec_step(&mut journal, &stream, &mut aggregate, &cmd, seed).ok();
             commands.push(cmd);
         }
         Self {
@@ -225,6 +247,7 @@ where
     A: AggregateArbitrary + StableHash,
     A::Ctx: CtxEntropy,
 {
+    let stream = StreamId::new("scenario");
     let mut journal = FaultInjector::new(MemoryJournal::new(genesis.clone()));
     let mut aggregate = Aggregate::new(genesis).expect("initial");
 
@@ -235,25 +258,27 @@ where
         match schedule.at(step) {
             Some(Fault::AppendFailure) => {
                 journal.arm_append_failure();
-                match exec_step(&mut journal, &mut aggregate, cmd, seed) {
+                match exec_step(&mut journal, &stream, &mut aggregate, cmd, seed) {
                     // The append failed as injected; rewound, so retry reproduces it.
                     Err(ExecuteError::Journal(_)) => {
-                        exec_step(&mut journal, &mut aggregate, cmd, seed).ok();
+                        exec_step(&mut journal, &stream, &mut aggregate, cmd, seed).ok();
                     }
                     // The command never reached the append; clear the arming.
                     _ => journal.disarm(),
                 }
             }
             Some(Fault::CrashResume { .. }) => {
-                exec_step(&mut journal, &mut aggregate, cmd, seed).ok();
-                let (resumed, _) = resume::<A, _>(&journal, seed).expect("resume after crash");
+                exec_step(&mut journal, &stream, &mut aggregate, cmd, seed).ok();
+                let (resumed, _) =
+                    resume::<A, _>(&journal, &stream, seed).expect("resume after crash");
                 aggregate = resumed;
             }
             Some(Fault::ForkContinue { .. }) => {
-                exec_step(&mut journal, &mut aggregate, cmd, seed).ok();
-                if let Some(head) = journal.head() {
-                    let branch = journal.fork(head).expect("fork");
-                    let (forked, _) = resume::<A, _>(&branch, seed).expect("resume on fork");
+                exec_step(&mut journal, &stream, &mut aggregate, cmd, seed).ok();
+                if let Some(head) = journal.head(&stream) {
+                    let branch = journal.fork(&stream, head).expect("fork");
+                    let (forked, _) =
+                        resume::<A, _>(&branch, &stream, seed).expect("resume on fork");
                     assert_eq!(
                         digest128(forked.state()),
                         digest128(aggregate.state()),
@@ -262,7 +287,7 @@ where
                 }
             }
             _ => {
-                exec_step(&mut journal, &mut aggregate, cmd, seed).ok();
+                exec_step(&mut journal, &stream, &mut aggregate, cmd, seed).ok();
             }
         }
     }
@@ -271,6 +296,7 @@ where
 
 fn exec_step<A, J>(
     journal: &mut J,
+    stream: &StreamId,
     aggregate: &mut Aggregate<A>,
     cmd: &A::Command,
     seed: &Seed,
@@ -278,13 +304,13 @@ fn exec_step<A, J>(
 where
     A: AggregateArbitrary,
     A::Ctx: CtxEntropy,
-    J: Journal<A>,
+    J: for<'a> Journal<A, Tx<'a> = ()>,
 {
-    let pos = journal.head().map_or(DrawPos(0), |head| {
-        journal.entropy_pos(head).expect("position")
+    let pos = journal.head(stream).map_or(DrawPos(0), |head| {
+        journal.entropy_pos(stream, head).expect("position")
     });
     let mut ctx = A::test_ctx(Box::new(SeededEntropy::at(seed, pos)), 0);
-    execute(journal, aggregate, cmd, &mut ctx)
+    execute(journal, stream, aggregate, cmd, &mut ctx)
 }
 
 fn sample<S: Strategy>(strategy: S, runner: &mut TestRunner) -> S::Value {

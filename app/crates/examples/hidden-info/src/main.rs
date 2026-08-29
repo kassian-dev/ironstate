@@ -8,9 +8,15 @@ use ironstate_aggregate::{
     PerPrincipal, Redact, Seed, SeededEntropy, StableHash, View,
 };
 use ironstate_journal::{
-    Journal, MemoryJournal, React, Seq, StreamId, Subscription, execute, resume,
+    Journal, MemoryJournal, React, Seq, SourceEvent, StreamId, Subscription, execute, resume,
 };
 use proptest::prelude::*;
+
+/// The journal stream this match's history lives in — distinct from the
+/// subscription *source* stream, which names the history being read.
+fn match_stream() -> StreamId {
+    StreamId::new("match")
+}
 
 type ParticipantId = u32;
 
@@ -439,12 +445,18 @@ fn run_demo() -> Result<()> {
         Command::Draw { who: 0 },
     ];
     for command in &script {
-        let pos = journal
-            .head()
-            .map_or(DrawPos(0), |h| journal.entropy_pos(h).unwrap());
+        let pos = journal.head(&match_stream()).map_or(DrawPos(0), |h| {
+            journal.entropy_pos(&match_stream(), h).unwrap()
+        });
         let mut context = ctx(&seed, pos, 0);
         // Ignore rejections in the demo; a real server would surface them.
-        let _ = execute(&mut journal, &mut game, command, &mut context);
+        let _ = execute(
+            &mut journal,
+            &match_stream(),
+            &mut game,
+            command,
+            &mut context,
+        );
     }
 
     // Redaction: each participant sees their own hand, only counts of others'.
@@ -459,18 +471,24 @@ fn run_demo() -> Result<()> {
     assert_eq!(view0.board, view1.board, "the board is public to everyone");
 
     // Resume rebuilds the same state from the journal.
-    let (resumed, _entropy) = resume::<MatchState, _>(&journal, &seed)
+    let (resumed, _entropy) = resume::<MatchState, _>(&journal, &match_stream(), &seed)
         .map_err(|e| anyhow::anyhow!("resume failed: {e}"))?;
     assert_eq!(resumed.state(), game.state());
     println!("resumed state matches the live state");
 
     // A system-minted timeout resolves the match.
-    let pos = journal
-        .head()
-        .map_or(DrawPos(0), |h| journal.entropy_pos(h).unwrap());
+    let pos = journal.head(&match_stream()).map_or(DrawPos(0), |h| {
+        journal.entropy_pos(&match_stream(), h).unwrap()
+    });
     let mut context = ctx(&seed, pos, 0);
-    execute(&mut journal, &mut game, &Command::Timeout, &mut context)
-        .map_err(|e| anyhow::anyhow!("timeout failed: {e}"))?;
+    execute(
+        &mut journal,
+        &match_stream(),
+        &mut game,
+        &Command::Timeout,
+        &mut context,
+    )
+    .map_err(|e| anyhow::anyhow!("timeout failed: {e}"))?;
     println!("match phase after timeout: {:?}", game.phase());
 
     // Feed the match's events to a player profile via a subscription. The
@@ -484,14 +502,21 @@ fn run_demo() -> Result<()> {
         matches_resolved: 0,
     })?;
     let mut subscription: Subscription<MatchState, PlayerProfile> = Subscription::new();
-    let stream = StreamId::new("match-1");
     let mut profile_ctx = ctx(&seed, DrawPos(0), 0);
-    for (i, event) in journal.events_since(None).unwrap().iter().enumerate() {
+    for (i, event) in journal
+        .events_since(&match_stream(), None)
+        .unwrap()
+        .iter()
+        .enumerate()
+    {
         subscription
             .deliver(
-                &stream,
-                Seq(i as u64 + 1),
-                &event.event,
+                SourceEvent {
+                    stream: &match_stream(),
+                    at: Seq(i as u64 + 1),
+                    event: &event.event,
+                },
+                &StreamId::new("profile"),
                 &mut profile,
                 &mut profile_ctx,
                 &mut profile_journal,

@@ -228,7 +228,7 @@ ironstate_aggregate::leak_test!(MatchState, excluding = [PlayCard]); // no cover
 
 Persists events with the entropy position they consumed, so an aggregate can be
 replayed, forked, and resumed bit-identically. A reference in-memory journal
-passes a seven-property conformance suite (`journal_contract_test!`) every
+passes a conformance suite (`journal_contract_test!`) every
 storage adapter is judged against, and a seeded fault-schedule simulation
 (`scenario_test!`) checks faults are invisible to outcomes. See the
 [crate README](app/crates/ironstate-journal/README.md).

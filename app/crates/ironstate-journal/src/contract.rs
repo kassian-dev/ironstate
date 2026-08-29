@@ -1,11 +1,18 @@
-//! The seven-property journal conformance suite behind `journal_contract_test!`.
+//! The journal conformance suite behind `journal_contract_test!`.
 //!
 //! Every storage adapter is judged against these, and the reference
-//! `MemoryJournal` must pass them all. The seven properties: round-trip;
-//! position totality & monotonicity; resume identity; fork-position equality;
-//! snapshot-vs-head discipline; failed-append atomicity; version tagging.
+//! `MemoryJournal` must pass them all.
+//!
+//! Eight properties apply to every journal: round-trip; position totality &
+//! monotonicity; resume identity; snapshot-vs-head discipline; failed-append
+//! atomicity; version tagging; **stream independence**; and **out-of-range
+//! addressing**. Two more — round-trip at each recorded step, and
+//! fork-position equality — need [`ForkableJournal`] and so are run only by
+//! [`run_contract_forkable`].
 
-use crate::journal::{ExecuteError, Journal, JournalError, Seq, Snapshot, VersionedEvent};
+use crate::journal::{
+    ExecuteError, ForkableJournal, Journal, JournalError, Seq, Snapshot, StreamId, VersionedEvent,
+};
 use crate::memory::MemoryJournal;
 use crate::replay::{execute, replay, resume};
 use ironstate::StateMachine;
@@ -17,6 +24,19 @@ use proptest::strategy::{Strategy, ValueTree};
 use proptest::test_runner::{Config, RngAlgorithm, TestRng, TestRunner};
 
 /// A journal an adapter author can construct freshly for the contract suite.
+///
+/// # Journals with a real transaction
+///
+/// The suite drives adapters through [`execute`], so every entry point is
+/// bound `for<'a> Journal<A, Tx<'a> = ()>`: a journal whose `Tx` is an actual
+/// database transaction cannot be run through
+/// [`journal_contract_test!`](crate::journal_contract_test) as it stands,
+/// because the harness has no way to mint and resolve a unit of work.
+///
+/// Until it does, hold such an adapter to the contract with a twin over the
+/// same storage whose `Tx` is `()` — the pattern the `async-store` example
+/// already uses for a store that cannot implement the synchronous trait at
+/// all. This is a limitation of the harness, not of the adapter.
 pub trait ContractJournal<A: AggregateRules + Clone>: Journal<A> {
     /// A fresh, empty journal seeded with the aggregate's genesis state.
     fn fresh(genesis: A) -> Self;
@@ -51,13 +71,24 @@ fn run_seed(seed: u64, case: u32) -> Seed {
     Seed(bytes)
 }
 
-fn head_pos<A, J>(journal: &J) -> DrawPos
+/// The stream the suite drives. A second, independent stream is used by the
+/// stream-independence property.
+fn test_stream() -> StreamId {
+    StreamId::new("contract")
+}
+
+/// A stream that must never be touched by appends to [`test_stream`].
+fn other_stream() -> StreamId {
+    StreamId::new("contract-other")
+}
+
+fn head_pos<A, J>(journal: &J, stream: &StreamId) -> DrawPos
 where
     A: AggregateRules,
     J: Journal<A>,
 {
-    journal.head().map_or(DrawPos(0), |head| {
-        journal.entropy_pos(head).expect("position at head")
+    journal.head(stream).map_or(DrawPos(0), |head| {
+        journal.entropy_pos(stream, head).expect("position at head")
     })
 }
 
@@ -70,10 +101,11 @@ fn drive<J, A>(
     max_steps: usize,
 ) -> (J, Aggregate<A>, Vec<(Seq, ironstate_aggregate::Digest128)>)
 where
-    J: ContractJournal<A>,
+    J: ContractJournal<A> + for<'a> Journal<A, Tx<'a> = ()>,
     A: AggregateArbitrary + StableHash,
     A::Ctx: CtxEntropy,
 {
+    let stream = test_stream();
     let mut journal = J::fresh(genesis.clone());
     let mut aggregate =
         Aggregate::new(genesis).expect("a sampled initial state is in its initial phase");
@@ -83,48 +115,82 @@ where
             break;
         }
         let cmd = sample(A::command_strategy(aggregate.state()), runner);
-        let pos = head_pos::<A, J>(&journal);
+        let pos = head_pos::<A, J>(&journal, &stream);
         let mut ctx = A::test_ctx(Box::new(SeededEntropy::at(seed, pos)), step as u64);
-        if let Ok(seq) = execute(&mut journal, &mut aggregate, &cmd, &mut ctx) {
+        if let Ok(seq) = execute(&mut journal, &stream, &mut aggregate, &cmd, &mut ctx) {
             steps.push((seq, digest128(aggregate.state())));
         }
     }
     (journal, aggregate, steps)
 }
 
-/// Run all seven contract properties against `J` for aggregate `A`.
+/// Run the eight properties every journal must satisfy, whether or not it can
+/// fork.
+///
+/// # Panics
+///
+/// Panics with a `[proven]`/property-numbered message naming the first
+/// violation found.
 pub fn run_contract<J, A>(cases: u32, max_steps: usize, seed_base: u64)
 where
-    J: ContractJournal<A>,
+    J: ContractJournal<A> + for<'a> Journal<A, Tx<'a> = ()>,
     A: AggregateArbitrary + StableHash,
     A::Ctx: CtxEntropy,
 {
+    let stream = test_stream();
     let mut runner = seeded_runner(seed_base);
     for case in 0..cases {
         let genesis = sample(A::initial_state_strategy(), &mut runner);
         let seed = run_seed(seed_base, case);
         let (journal, live, steps) = drive::<J, A>(genesis.clone(), &seed, &mut runner, max_steps);
 
-        property_2_positions_total_and_monotonic(&journal, case);
-        property_1_round_trip(&journal, &genesis, &steps, case);
-        property_7_version_tagging(&journal, case);
-        property_3_resume_identity(&journal, live, &seed, &mut runner, case);
-        property_4_fork_position_equality(&journal, case);
-        property_5_snapshot_vs_head(&journal, &seed, case);
+        property_2_positions_total_and_monotonic(&journal, &stream, case);
+        property_1_round_trip(&journal, &stream, &genesis, &steps, case);
+        property_7_version_tagging(&journal, &stream, case);
+        property_3_resume_identity(&journal, &stream, live, &seed, &mut runner, case);
+        property_5_snapshot_vs_head(&journal, &stream, &seed, case);
+        property_9_out_of_range_seq(&journal, &stream, case);
 
         property_6_failed_append_atomicity::<J, A>(&seed, &mut runner, case);
+        property_8_stream_independence::<J, A>(genesis, &seed, &mut runner, max_steps, case);
     }
 }
 
-fn property_2_positions_total_and_monotonic<J, A>(journal: &J, case: u32)
+/// Run every property, including the two that need [`ForkableJournal`].
+///
+/// # Panics
+///
+/// Panics with a `[proven]`/property-numbered message naming the first
+/// violation found.
+pub fn run_contract_forkable<J, A>(cases: u32, max_steps: usize, seed_base: u64)
+where
+    J: ContractJournal<A> + ForkableJournal<A> + for<'a> Journal<A, Tx<'a> = ()>,
+    A: AggregateArbitrary + StableHash,
+    A::Ctx: CtxEntropy,
+{
+    run_contract::<J, A>(cases, max_steps, seed_base);
+
+    let stream = test_stream();
+    let mut runner = seeded_runner(seed_base);
+    for case in 0..cases {
+        let genesis = sample(A::initial_state_strategy(), &mut runner);
+        let seed = run_seed(seed_base, case);
+        let (journal, _live, steps) = drive::<J, A>(genesis.clone(), &seed, &mut runner, max_steps);
+
+        property_1_round_trip_at_each_step(&journal, &stream, &genesis, &steps, case);
+        property_4_fork_position_equality(&journal, &stream, case);
+    }
+}
+
+fn property_2_positions_total_and_monotonic<J, A>(journal: &J, stream: &StreamId, case: u32)
 where
     A: AggregateRules,
     J: Journal<A>,
 {
     let mut previous = DrawPos(0);
-    if let Some(head) = journal.head() {
+    if let Some(head) = journal.head(stream) {
         for seq in 1..=head.0 {
-            let pos = journal.entropy_pos(Seq(seq)).unwrap_or_else(|_| {
+            let pos = journal.entropy_pos(stream, Seq(seq)).unwrap_or_else(|_| {
                 panic!("[proven] property 2: entropy_pos undefined at Seq({seq}), case {case}")
             });
             assert!(
@@ -136,8 +202,15 @@ where
     }
 }
 
+/// Property 1 — **round trip**. Replaying the log reproduces the live state.
+///
+/// The single most important thing a journal does, so it must hold for every
+/// adapter, not only forkable ones: it is expressed against `events_since`
+/// alone. [`property_1_round_trip_at_each_step`] additionally checks every
+/// intermediate point, which does need branching.
 fn property_1_round_trip<J, A>(
     journal: &J,
+    stream: &StreamId,
     genesis: &A,
     steps: &[(Seq, ironstate_aggregate::Digest128)],
     case: u32,
@@ -145,25 +218,49 @@ fn property_1_round_trip<J, A>(
     J: Journal<A>,
     A: AggregateRules + Clone + StableHash,
 {
+    let Some((_, live_digest)) = steps.last() else {
+        return;
+    };
+    let events = journal.events_since(stream, None).expect("events");
+    let rebuilt = replay(genesis_snapshot(genesis.clone()), &events).expect("replay");
+    assert_eq!(
+        digest128(rebuilt.state()),
+        *live_digest,
+        "property 1: replay of the whole log did not reproduce the live digest, case {case}",
+    );
+}
+
+/// Property 1b — round trip at **every** recorded step, which needs a branch to
+/// isolate each prefix.
+fn property_1_round_trip_at_each_step<J, A>(
+    journal: &J,
+    stream: &StreamId,
+    genesis: &A,
+    steps: &[(Seq, ironstate_aggregate::Digest128)],
+    case: u32,
+) where
+    J: ForkableJournal<A>,
+    A: AggregateRules + Clone + StableHash,
+{
     for (seq, live_digest) in steps {
-        let branch = journal.fork(*seq).expect("fork at a recorded Seq");
-        let events = branch.events_since(None).expect("events");
+        let branch = journal.fork(stream, *seq).expect("fork at a recorded Seq");
+        let events = branch.events_since(stream, None).expect("events");
         let snapshot = genesis_snapshot(genesis.clone());
         let rebuilt = replay(snapshot, &events).expect("replay");
         assert_eq!(
             digest128(rebuilt.state()),
             *live_digest,
-            "property 1: replay did not reproduce the live digest at {seq:?}, case {case}",
+            "property 1b: replay did not reproduce the live digest at {seq:?}, case {case}",
         );
     }
 }
 
-fn property_7_version_tagging<J, A>(journal: &J, case: u32)
+fn property_7_version_tagging<J, A>(journal: &J, stream: &StreamId, case: u32)
 where
     A: AggregateRules,
     J: Journal<A>,
 {
-    for event in journal.events_since(None).expect("events") {
+    for event in journal.events_since(stream, None).expect("events") {
         let VersionedEvent {
             type_name, version, ..
         } = event;
@@ -180,6 +277,7 @@ where
 
 fn property_3_resume_identity<J, A>(
     journal: &J,
+    stream: &StreamId,
     mut live: Aggregate<A>,
     seed: &Seed,
     runner: &mut TestRunner,
@@ -189,14 +287,14 @@ fn property_3_resume_identity<J, A>(
     A: AggregateArbitrary + StableHash,
     A::Ctx: CtxEntropy,
 {
-    if journal.head().is_none() {
+    if journal.head(stream).is_none() {
         return;
     }
-    let pos = head_pos::<A, J>(journal);
+    let pos = head_pos::<A, J>(journal, stream);
     let cmd = sample(A::command_strategy(live.state()), runner);
 
     // Resume to head, then handle one command.
-    let (mut resumed, _) = resume::<A, J>(journal, seed).expect("resume");
+    let (mut resumed, _) = resume::<A, J>(journal, stream, seed).expect("resume");
     let mut ctx_r = A::test_ctx(Box::new(SeededEntropy::at(seed, pos)), 0);
     let _ = resumed.handle(&cmd, &mut ctx_r);
 
@@ -211,37 +309,37 @@ fn property_3_resume_identity<J, A>(
     );
 }
 
-fn property_4_fork_position_equality<J, A>(journal: &J, case: u32)
+fn property_4_fork_position_equality<J, A>(journal: &J, stream: &StreamId, case: u32)
 where
     A: AggregateRules,
-    J: Journal<A>,
+    J: ForkableJournal<A>,
 {
-    if let Some(head) = journal.head() {
+    if let Some(head) = journal.head(stream) {
         let at = Seq(head.0.div_ceil(2).max(1));
-        let branch = journal.fork(at).expect("fork");
+        let branch = journal.fork(stream, at).expect("fork");
         assert_eq!(
-            branch.entropy_pos(at).expect("branch position"),
-            journal.entropy_pos(at).expect("main position"),
+            branch.entropy_pos(stream, at).expect("branch position"),
+            journal.entropy_pos(stream, at).expect("main position"),
             "property 4: entropy_pos disagreed at the fork point, case {case}",
         );
         assert_eq!(
-            branch.head(),
+            branch.head(stream),
             Some(at),
             "property 4: a fork's head should sit at the fork point, case {case}",
         );
     }
 }
 
-fn property_5_snapshot_vs_head<J, A>(journal: &J, seed: &Seed, case: u32)
+fn property_5_snapshot_vs_head<J, A>(journal: &J, stream: &StreamId, seed: &Seed, case: u32)
 where
     A: AggregateRules,
     J: Journal<A>,
 {
-    if journal.head().is_none() {
+    if journal.head(stream).is_none() {
         return;
     }
-    let pos = head_pos::<A, J>(journal);
-    let (_, entropy) = resume::<A, J>(journal, seed).expect("resume");
+    let pos = head_pos::<A, J>(journal, stream);
+    let (_, entropy) = resume::<A, J>(journal, stream, seed).expect("resume");
     assert_eq!(
         entropy.draws(),
         pos,
@@ -251,10 +349,11 @@ where
 
 fn property_6_failed_append_atomicity<J, A>(seed: &Seed, runner: &mut TestRunner, case: u32)
 where
-    J: ContractJournal<A>,
+    J: ContractJournal<A> + for<'a> Journal<A, Tx<'a> = ()>,
     A: AggregateArbitrary + StableHash,
     A::Ctx: CtxEntropy,
 {
+    let stream = test_stream();
     let genesis = sample(A::initial_state_strategy(), runner);
     let mut journal = FailNextAppend {
         inner: J::fresh(genesis.clone()),
@@ -270,10 +369,10 @@ where
         }
         let cmd = sample(A::command_strategy(aggregate.state()), runner);
         let mut ctx = A::test_ctx(Box::new(SeededEntropy::at(seed, DrawPos(0))), 0);
-        match execute(&mut journal, &mut aggregate, &cmd, &mut ctx) {
+        match execute(&mut journal, &stream, &mut aggregate, &cmd, &mut ctx) {
             Err(ExecuteError::Journal(_)) => {
                 assert_eq!(
-                    journal.head(),
+                    journal.head(&stream),
                     None,
                     "property 6: a failed append journaled something, case {case}"
                 );
@@ -298,6 +397,114 @@ where
     }
 }
 
+/// Property 8 — **stream independence**. Appends to one stream never move
+/// another stream's head, entropy position, or snapshot.
+///
+/// This is the property a hand-rolled stream-routing layer above a
+/// single-stream journal gets wrong, which is why it is part of the contract
+/// rather than left to adapter authors.
+fn property_8_stream_independence<J, A>(
+    genesis: A,
+    seed: &Seed,
+    runner: &mut TestRunner,
+    max_steps: usize,
+    case: u32,
+) where
+    J: ContractJournal<A> + for<'a> Journal<A, Tx<'a> = ()>,
+    A: AggregateArbitrary + StableHash,
+    A::Ctx: CtxEntropy,
+{
+    let driven = test_stream();
+    let untouched = other_stream();
+
+    let mut journal = J::fresh(genesis.clone());
+    let mut aggregate =
+        Aggregate::new(genesis).expect("a sampled initial state is in its initial phase");
+
+    // Whatever the untouched stream reports before any append, it must still
+    // report after every append to the other stream.
+    let before_head = journal.head(&untouched);
+    let before_events = journal
+        .events_since(&untouched, None)
+        .expect("events")
+        .len();
+    let before_snapshot = journal
+        .latest_snapshot(&untouched)
+        .expect("snapshot")
+        .map(|s| (s.at, s.entropy_pos));
+
+    for step in 0..max_steps {
+        if aggregate.phase().is_terminal() {
+            break;
+        }
+        let cmd = sample(A::command_strategy(aggregate.state()), runner);
+        let pos = head_pos::<A, J>(&journal, &driven);
+        let mut ctx = A::test_ctx(Box::new(SeededEntropy::at(seed, pos)), step as u64);
+        let _ = execute(&mut journal, &driven, &mut aggregate, &cmd, &mut ctx);
+
+        assert_eq!(
+            journal.head(&untouched),
+            before_head,
+            "[proven] property 8: an append to one stream moved another's head, case {case}",
+        );
+    }
+
+    assert_eq!(
+        journal
+            .events_since(&untouched, None)
+            .expect("events")
+            .len(),
+        before_events,
+        "[proven] property 8: an append to one stream added events to another, case {case}",
+    );
+    assert_eq!(
+        journal
+            .entropy_pos(&untouched, Seq(0))
+            .expect("genesis position"),
+        DrawPos(0),
+        "[proven] property 8: an append to one stream moved another's entropy, case {case}",
+    );
+    assert_eq!(
+        journal
+            .latest_snapshot(&untouched)
+            .expect("snapshot")
+            .map(|s| (s.at, s.entropy_pos)),
+        before_snapshot,
+        "[proven] property 8: an append to one stream moved another's snapshot, case {case}",
+    );
+}
+
+/// Property 9 — **out-of-range addressing**. A `Seq` past the head must yield
+/// [`JournalError::UnknownSeq`], never a different record's position.
+///
+/// `Seq` is a public tuple struct, so a caller can construct any value. On a
+/// 32-bit target a naive `as usize` cast truncates, which can turn an
+/// out-of-range `Seq` into a valid index — a wrong answer rather than an error.
+fn property_9_out_of_range_seq<J, A>(journal: &J, stream: &StreamId, case: u32)
+where
+    A: AggregateRules,
+    J: Journal<A>,
+{
+    let head = journal.head(stream).map_or(0, |h| h.0);
+    for probe in [head + 1, head + 2, u64::from(u32::MAX) + head + 1, u64::MAX] {
+        match journal.entropy_pos(stream, Seq(probe)) {
+            Err(JournalError::UnknownSeq { at }) => assert_eq!(
+                at,
+                Seq(probe),
+                "[proven] property 9: UnknownSeq reported the wrong Seq, case {case}",
+            ),
+            Err(other) => panic!(
+                "[proven] property 9: out-of-range Seq({probe}) gave {other:?} \
+                 rather than UnknownSeq, case {case}"
+            ),
+            Ok(pos) => panic!(
+                "[proven] property 9: out-of-range Seq({probe}) returned a position \
+                 ({pos:?}) instead of UnknownSeq, case {case}"
+            ),
+        }
+    }
+}
+
 fn genesis_snapshot<A: AggregateRules>(state: A) -> Snapshot<A> {
     Snapshot {
         state,
@@ -314,31 +521,51 @@ struct FailNextAppend<J> {
 }
 
 impl<A: AggregateRules, J: Journal<A>> Journal<A> for FailNextAppend<J> {
-    fn append(&mut self, events: &[A::Event], entropy_pos: DrawPos) -> Result<Seq, JournalError> {
+    type Tx<'a> = J::Tx<'a>;
+
+    fn append_in(
+        &mut self,
+        tx: &mut Self::Tx<'_>,
+        stream: &StreamId,
+        events: &[A::Event],
+        entropy_pos: DrawPos,
+    ) -> Result<Seq, JournalError> {
         if self.armed {
             self.armed = false;
             return Err(JournalError::Storage("injected append failure".into()));
         }
-        self.inner.append(events, entropy_pos)
+        self.inner.append_in(tx, stream, events, entropy_pos)
     }
-    fn entropy_pos(&self, at: Seq) -> Result<DrawPos, JournalError> {
-        self.inner.entropy_pos(at)
+    fn snapshot_in(
+        &mut self,
+        tx: &mut Self::Tx<'_>,
+        stream: &StreamId,
+        snapshot: Snapshot<A>,
+    ) -> Result<(), JournalError> {
+        self.inner.snapshot_in(tx, stream, snapshot)
     }
-    fn head(&self) -> Option<Seq> {
-        self.inner.head()
+    fn entropy_pos(&self, stream: &StreamId, at: Seq) -> Result<DrawPos, JournalError> {
+        self.inner.entropy_pos(stream, at)
     }
-    fn events_since(&self, after: Option<Seq>) -> Result<Vec<VersionedEvent<A>>, JournalError> {
-        self.inner.events_since(after)
+    fn head(&self, stream: &StreamId) -> Option<Seq> {
+        self.inner.head(stream)
     }
-    fn snapshot(&mut self, snapshot: Snapshot<A>) -> Result<(), JournalError> {
-        self.inner.snapshot(snapshot)
+    fn events_since(
+        &self,
+        stream: &StreamId,
+        after: Option<Seq>,
+    ) -> Result<Vec<VersionedEvent<A>>, JournalError> {
+        self.inner.events_since(stream, after)
     }
-    fn latest_snapshot(&self) -> Result<Option<Snapshot<A>>, JournalError> {
-        self.inner.latest_snapshot()
+    fn latest_snapshot(&self, stream: &StreamId) -> Result<Option<Snapshot<A>>, JournalError> {
+        self.inner.latest_snapshot(stream)
     }
-    fn fork(&self, at: Seq) -> Result<Self, JournalError> {
+}
+
+impl<A: AggregateRules, J: ForkableJournal<A>> ForkableJournal<A> for FailNextAppend<J> {
+    fn fork(&self, stream: &StreamId, at: Seq) -> Result<Self, JournalError> {
         Ok(FailNextAppend {
-            inner: self.inner.fork(at)?,
+            inner: self.inner.fork(stream, at)?,
             armed: self.armed,
         })
     }

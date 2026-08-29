@@ -183,13 +183,17 @@ says why it isn't there and what would change that.
 
 **Out of scope — downstream, or unneeded.**
 
-- **Storage adapters** (Postgres, SQLite, …) — downstream, written against the
-  `Journal` trait and held to `journal_contract_test!`. *Gate: until a second
-  consumer wants one.*
-- **Message transport / durable delivery (outboxes)** — application code. This
-  rules out ironstate *implementing* an outbox; it does not settle whether the
-  `Journal` trait should expose a seam for a caller's own transaction, which is
-  a separate question about where the I/O boundary sits.
+- **Storage adapters** (Postgres, SQLite, …) — still downstream, written against
+  the `Journal` trait and held to `journal_contract_test!`. The "until a second
+  consumer wants one" gate **has now fired** (a relational adopter arrived
+  wanting one), which is what motivated the multi-stream and transactional
+  reshape of `Journal` — but the adapters themselves stay out of this repo.
+- **Message transport / durable delivery (outboxes)** — application code.
+  ironstate does not *implement* an outbox. It does provide the **seam** one
+  needs: `Journal::Tx` plus `execute_in`, so an adopter can enclose the append
+  in their own transaction alongside their read-model and outbound writes. The
+  distinction is the sans-I/O rule — an `append` that owned its commit would be
+  ironstate making an I/O policy decision on the adapter's behalf.
 - **Commit–reveal / seed-commitment protocols** — built *on* `AuditDigest` by
   applications; no seed-commitment API in the family.
 - **Event-level redaction** — the view-distribution model (clients consume views,

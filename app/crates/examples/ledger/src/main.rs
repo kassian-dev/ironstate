@@ -6,8 +6,14 @@ use ironstate_aggregate::{
     Aggregate, AggregateArbitrary, AggregateInvariant, AggregateInvariants, AggregateRules,
     DrawPos, EntropySource, LogicalTime, OwnedDeterministicCtx, Seed, SeededEntropy, StableHash,
 };
-use ironstate_journal::{Journal, MemoryJournal, execute, resume};
+use ironstate_journal::{Journal, MemoryJournal, StreamId, execute, resume};
 use proptest::prelude::*;
+
+/// The stream this example drives. One journal holds many; this one uses a
+/// single named instance.
+fn stream() -> StreamId {
+    StreamId::new("account")
+}
 
 #[derive(StateMachine, StableHash, Clone, Debug, PartialEq)]
 #[state_machine(initial = Open, terminal = [Closed])]
@@ -200,8 +206,8 @@ ironstate_journal::journal_contract_test!(Account);
 
 fn ctx_at_head(journal: &MemoryJournal<Account>) -> OwnedDeterministicCtx<u32> {
     let pos = journal
-        .head()
-        .map_or(DrawPos(0), |h| journal.entropy_pos(h).unwrap());
+        .head(&stream())
+        .map_or(DrawPos(0), |h| journal.entropy_pos(&stream(), h).unwrap());
     OwnedDeterministicCtx {
         entropy: Box::new(SeededEntropy::at(&Seed([0; 32]), pos)),
         actor: 0,
@@ -218,7 +224,7 @@ fn run_demo() -> Result<()> {
         Command::Withdraw { cents: 3_500 },
     ] {
         let mut ctx = ctx_at_head(&journal);
-        execute(&mut journal, &mut account, &command, &mut ctx)
+        execute(&mut journal, &stream(), &mut account, &command, &mut ctx)
             .map_err(|e| anyhow::anyhow!("{e}"))?;
     }
     println!(
@@ -229,7 +235,7 @@ fn run_demo() -> Result<()> {
     // Resume rebuilds the balance from the event log alone.
     let seed = Seed([0; 32]);
     let (resumed, _entropy) =
-        resume::<Account, _>(&journal, &seed).map_err(|e| anyhow::anyhow!("{e}"))?;
+        resume::<Account, _>(&journal, &stream(), &seed).map_err(|e| anyhow::anyhow!("{e}"))?;
     assert_eq!(resumed.state().balance_cents, account.state().balance_cents);
     println!(
         "resumed balance matches: {} cents",
@@ -241,6 +247,7 @@ fn run_demo() -> Result<()> {
     let before = account.state().balance_cents;
     let rejected = execute(
         &mut journal,
+        &stream(),
         &mut account,
         &Command::Withdraw { cents: 1_000_000 },
         &mut ctx,

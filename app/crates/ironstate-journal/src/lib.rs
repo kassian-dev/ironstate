@@ -13,7 +13,7 @@
 //!   synchronous [`Journal`] (an async one, say) reuses the same discipline via
 //!   [`prepare`] + [`Prepared::commit`]/[`Prepared::abort`] around its own append.
 //! - [`resume`] rebuilds an aggregate from the log (after a restart, say), and
-//!   [`replay`]/[`fork`](Journal::fork) reconstruct or branch its history.
+//!   [`replay`]/[`fork`](ForkableJournal::fork) reconstruct or branch its history.
 //! - [`replay_hash`] returns a collision-resistant digest of the final state, so
 //!   anyone holding the events can verify the outcome.
 //!
@@ -26,7 +26,7 @@
 //! # Example: append a command, then replay the log
 //!
 //! ```
-//! use ironstate_journal::{execute, replay, Journal, MemoryJournal, Seq, Snapshot};
+//! use ironstate_journal::{execute, replay, Journal, MemoryJournal, Seq, Snapshot, StreamId};
 //! # use ironstate::prelude::*;
 //! # use ironstate_aggregate::*;
 //! #
@@ -61,6 +61,8 @@
 //! # }
 //!
 //! let genesis = Counter { phase: Phase::Open, total: 0 };
+//! // One journal holds many streams; name the aggregate instance this is.
+//! let stream = StreamId::new("counter-1");
 //! let mut journal = MemoryJournal::new(genesis.clone());
 //! let mut counter = Aggregate::new(genesis.clone()).unwrap();
 //! let mut ctx = OwnedDeterministicCtx {
@@ -71,11 +73,11 @@
 //!
 //! // The everyday loop: validate, append the events (with the entropy position,
 //! // atomically), then apply them — so the log and the live state never disagree.
-//! execute(&mut journal, &mut counter, &Command::Add(7), &mut ctx).unwrap();
+//! execute(&mut journal, &stream, &mut counter, &Command::Add(7), &mut ctx).unwrap();
 //! assert_eq!(counter.state().total, 7);
 //!
 //! // Replaying the log from genesis reproduces the state — the journal's whole point.
-//! let events = journal.events_since(None).unwrap();
+//! let events = journal.events_since(&stream, None).unwrap();
 //! let base = Snapshot { state: genesis, schema_version: 0, at: Seq(0), entropy_pos: DrawPos(0) };
 //! assert_eq!(replay(base, &events).unwrap().state().total, 7);
 //! ```
@@ -94,9 +96,13 @@ mod replay;
 mod sim;
 mod subscription;
 
-pub use journal::{ExecuteError, Journal, JournalError, Seq, Snapshot, VersionedEvent};
-pub use replay::{Prepared, ResumeError, execute, prepare, replay, replay_hash, resume};
-pub use subscription::{Delivered, React, StreamId, Subscription};
+pub use journal::{
+    ExecuteError, ForkableJournal, Journal, JournalError, Seq, Snapshot, StreamId, VersionedEvent,
+};
+pub use replay::{
+    Pending, Prepared, ResumeError, execute, execute_in, prepare, replay, replay_hash, resume,
+};
+pub use subscription::{Delivered, React, SourceEvent, Subscription};
 
 #[cfg(feature = "memory")]
 pub use memory::MemoryJournal;
@@ -115,6 +121,6 @@ pub mod testkit {
 #[cfg(feature = "sim")]
 #[doc(hidden)]
 pub mod testkit_support {
-    pub use crate::contract::run_contract;
+    pub use crate::contract::{run_contract, run_contract_forkable};
     pub use crate::sim::run_scenario;
 }

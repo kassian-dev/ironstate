@@ -47,7 +47,7 @@ jobs:
       # The determinism suite writes a state digest per type; it must be identical
       # on every target. Each leg publishes its manifest for the `determinism` job.
       - run: make determinism-manifest | tee determinism-${{ matrix.arch }}.txt
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: determinism-${{ matrix.arch }}
           path: determinism-${{ matrix.arch }}.txt

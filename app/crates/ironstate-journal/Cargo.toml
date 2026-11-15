@@ -15,9 +15,11 @@ categories = ["data-structures"]
 ironstate-aggregate = { workspace = true, features = ["audit"] }
 # RestoreError is defined in core and surfaced by replay/replay_hash.
 ironstate = { version = "0.1", path = "../ironstate", default-features = false }
-thiserror.workspace = true
 proptest = { workspace = true, optional = true }
 serde = { workspace = true, optional = true }
+
+[dev-dependencies]
+thiserror.workspace = true
 
 [features]
 default = ["memory"]

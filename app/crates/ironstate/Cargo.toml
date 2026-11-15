@@ -12,7 +12,6 @@ categories = ["data-structures", "development-tools::testing"]
 
 [dependencies]
 ironstate-derive = { workspace = true, optional = true }
-thiserror.workspace = true
 proptest = { workspace = true, optional = true }
 # serde/serde_json back versioned restore only: the {version, payload} envelope
 # decodes through the MigrateFrom chain. Pulled in by the `restore` feature so a

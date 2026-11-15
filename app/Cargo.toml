@@ -31,7 +31,6 @@ ironstate-journal = { version = "0.3", path = "crates/ironstate-journal" }
 # external — pin minor, let patch float
 rustc-stable-hash = "0.1" # rust-lang-maintained engine behind Digest128
 blake3 = "1.8"            # engine behind AuditDigest
-rand = { version = "0.10", default-features = false }
 # ChaCha12Rng with set_word_pos gives the O(1) counter seek SeededEntropy needs
 rand_chacha = { version = "0.10", default-features = false }
 # `fork`/`timeout` pull wait-timeout, which doesn't build for wasm32 — and the

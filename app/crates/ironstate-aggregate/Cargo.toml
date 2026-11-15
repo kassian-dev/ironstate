@@ -17,7 +17,6 @@ categories = ["data-structures", "game-development"]
 # feature re-enables it for x86 property tests.
 ironstate = { version = "0.1", path = "../ironstate", default-features = false, features = ["derive"] }
 ironstate-aggregate-derive = { workspace = true, optional = true }
-thiserror.workspace = true
 # Deterministic entropy is core to an aggregate, so the seekable ChaCha RNG is
 # always present. rand_chacha pulls no OS-entropy backend, so it builds on wasm.
 rand_chacha = { workspace = true }
@@ -27,6 +26,7 @@ proptest = { workspace = true, optional = true }
 serde = { workspace = true, optional = true }
 
 [dev-dependencies]
+thiserror.workspace = true
 trybuild.workspace = true
 serde = { workspace = true }
 serde_json = "1"
